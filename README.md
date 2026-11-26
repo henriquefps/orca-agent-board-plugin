@@ -68,8 +68,8 @@ collapsed groups) is kept by Orca for the plugin and needs no `storage:own`.
 - **Filters**, matched per agent, not per workspace: **Needs me** (waiting, blocked or unread, or the most
   recent chat of a workspace whose child waits), **Running**, **Unread**, **Hide children** (List only, on
   by default) and **Hide idle** (workspaces without an open agent; on by default). Chip counts count agents.
-- **Agent cards:** a status icon beside the card (an animated spinner while running); the title;
-  project/workspace and host; "Agent: <last reply>"; then the status, the children summary (on the
+- **Agent cards:** project/workspace and host first; then the status icon (an animated spinner while
+  running) beside the title; "Agent: <last reply>"; then the status, the children summary (on the
   workspace's most recent chat only: how many descendant workspaces, and how many of them need you,
   failed, are running or unread, each in its tone), agent kind, relative time and subagents.
 - **One status per card**, most urgent first, with the prototype's signals (left bar, card surface, icon,

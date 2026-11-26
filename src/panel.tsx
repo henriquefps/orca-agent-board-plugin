@@ -228,38 +228,43 @@ function AgentCard({ snap, fam, a, w }: { snap: BoardSnapshot; fam: Family; a: B
   return (
     <Box key={a.id} direction="row" align="stretch" gap="xs" border={look.border} background={look.background} radius="md">
       {look.bar ? <Box width={BAR_WIDTH} shrink={false} border={look.bar} background={look.bar} radius="full" /> : null}
-      {/* Outside the ListItem: a pressable ListItem cannot hold an IconButton. */}
-      <Box shrink={false} paddingY="sm" align="center">
-        <StatusIcon look={look} label={own.label} onPress={press} />
-      </Box>
-      <Box grow>
-        <List label={title}>
-          <ListItem onPress={press}>
-            <Stack gap="xs">
-              <Text weight={look.strong ? 'semibold' : 'regular'} truncate>
-                {title}
-              </Text>
-              <Row gap="xs" wrap>
-                <Badge>{where}</Badge>
-                <Badge>{w.host}</Badge>
-              </Row>
-              {message ? (
-                <Text size="sm" muted>
-                  <Text size="sm" weight={look.strong ? 'medium' : 'regular'} muted={!look.strong}>{message.who}</Text> {message.text.length > 180 ? `${message.text.slice(0, 179)}…` : message.text}
-                </Text>
-              ) : null}
-              <Row gap="xs" wrap align="center">
-                <StatusBadge look={badgeLook} label={own.label} />
-                {isLatest(a, w) ? <ChildBadges fam={fam} w={w} /> : null}
-                <Text size="xs" muted>
-                  {a.agent ?? 'agent'} · <RelativeTime at={a.updatedAt} format="short" muted />
-                  {a.subagents ? ` · ${plural(a.subagents, 'subagent', 'subagents')}` : ''}
-                  {a.kind === 'terminal' ? ' · terminal' : ''}
-                </Text>
-              </Row>
-            </Stack>
-          </ListItem>
-        </List>
+      <Box grow gap="none">
+        {/* Project first, always (the user's wireframe), then the icon beside the title. */}
+        <Box direction="row" gap="xs" wrap paddingX="sm" paddingY="xs">
+          <Badge>{where}</Badge>
+          <Badge>{w.host}</Badge>
+        </Box>
+        <Box direction="row" align="start">
+          {/* Outside the ListItem: a pressable ListItem cannot hold an IconButton. */}
+          <Box shrink={false} paddingX="xs" paddingY="xs">
+            <StatusIcon look={look} label={own.label} onPress={press} />
+          </Box>
+          <Box grow>
+            <List label={title}>
+              <ListItem onPress={press}>
+                <Stack gap="xs">
+                  <Text weight={look.strong ? 'semibold' : 'regular'} truncate>
+                    {title}
+                  </Text>
+                  {message ? (
+                    <Text size="sm" muted>
+                      <Text size="sm" weight={look.strong ? 'medium' : 'regular'} muted={!look.strong}>{message.who}</Text> {message.text.length > 180 ? `${message.text.slice(0, 179)}…` : message.text}
+                    </Text>
+                  ) : null}
+                  <Row gap="xs" wrap align="center">
+                    <StatusBadge look={badgeLook} label={own.label} />
+                    {isLatest(a, w) ? <ChildBadges fam={fam} w={w} /> : null}
+                    <Text size="xs" muted>
+                      {a.agent ?? 'agent'} · <RelativeTime at={a.updatedAt} format="short" muted />
+                      {a.subagents ? ` · ${plural(a.subagents, 'subagent', 'subagents')}` : ''}
+                      {a.kind === 'terminal' ? ' · terminal' : ''}
+                    </Text>
+                  </Row>
+                </Stack>
+              </ListItem>
+            </List>
+          </Box>
+        </Box>
       </Box>
     </Box>
   )

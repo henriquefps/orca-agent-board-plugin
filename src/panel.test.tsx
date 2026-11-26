@@ -135,11 +135,19 @@ function cardLook(p: TestPanel, title: string) {
     (n) => n.type === 'Box' && n.props?.direction === 'row' && kids(n).some((c) => walk(c).some((d) => d.type === 'List' && d.props?.label === title))
   )
   assert.ok(card, `card ${title}`)
-  const [first, second] = kids(card)
-  const bar = first?.props?.width === 3 ? first : null
-  const iconSlot = bar ? second : first
-  const icon = iconSlot ? kids(iconSlot)[0] : undefined
+  const bar = kids(card).find((c) => c.props?.width === 3) ?? null
   const nodes = walk(card)
+  const icon = nodes.find((n) => n.type === 'Spinner' || n.type === 'IconButton')
+  // Card order (the user's wireframe): line 1 the project and host chips; line 2 the status icon
+  // beside the title (the icon outside the pressable ListItem); then the reply and the meta row.
+  const content = kids(card).find((c) => c !== bar)
+  assert.ok(content)
+  const [chipRow, titleRow] = kids(content)
+  assert.deepEqual(kids(chipRow!).map((c) => c.type), ['Badge', 'Badge'], `${title}: chips first`)
+  const [iconSlot, item] = kids(titleRow!)
+  assert.ok(['Spinner', 'IconButton'].includes(kids(iconSlot!)[0]?.type ?? ''), `${title}: icon on the title line`)
+  const inItem = walk(item!).filter((n) => n.type === 'Text' && textOf(n) === title)
+  assert.equal(inItem.length, 1, `${title}: the title beside the icon`)
   const titleText = nodes.find((n) => n.type === 'Text' && textOf(n) === title)
   const badges = nodes.filter((n) => n.type === 'Badge').map((n) => ({ text: textOf(n), tone: n.props?.tone ?? null }))
   return {
