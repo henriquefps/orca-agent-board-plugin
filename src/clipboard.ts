@@ -3,6 +3,7 @@
 // only those found on PATH, in that order. The text always goes on stdin, never in argv, and no
 // shell runs.
 import { spawn as nodeSpawn } from 'node:child_process'
+import { withWindowsVars } from './winenv.ts'
 import { existsSync, readdirSync } from 'node:fs'
 import { onPath } from './cli.ts'
 
@@ -52,7 +53,7 @@ export function clipboardEnv(
     }
   }
 ): NodeJS.ProcessEnv {
-  const out = { ...env }
+  const out = { ...withWindowsVars(env, platform) }
   delete out.ELECTRON_RUN_AS_NODE
   delete out.NODE_OPTIONS
   if (platform !== 'linux') return out

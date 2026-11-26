@@ -196,6 +196,9 @@ minutes). [docs/orca-data-sources.md](docs/orca-data-sources.md) lists what each
   it came from and you can close it.
 - **No chat-tab focus.** Orca has no API to focus one chat tab: the window shows the agent's workspace
   with whatever tab was last active there.
+- **Windows:** Orca starts plugin workers without `APPDATA`/`LOCALAPPDATA`, which the Orca CLI needs. Since 0.1.6
+  the board derives them from your user profile folder for the CLI and clipboard tools (see
+  [docs/orca-data-sources.md](docs/orca-data-sources.md)).
 - **Needs the Orca CLI:** parent and child workspaces, other Orca servers, one project per Git remote,
   display names from other hosts, linked PRs, last replies, per-agent unread and failed/interrupted
   outcomes.
