@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "agent-board",
   "name": "Agent Board",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Your coding agents across every machine Orca reaches, in one sidebar list: what needs you first, parents and their children, one project per Git remote.",
   "author": {
     "name": "Henrique Silva",

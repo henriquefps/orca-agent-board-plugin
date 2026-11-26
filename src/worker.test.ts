@@ -2,7 +2,7 @@
 import { afterEach, assert, hostError, mockHost, mountWorker, test, type TestWorker } from 'orca/testing'
 import type { CliRunner } from './cli.ts'
 import { cliAnswers, hostApiFixture, workspaceRowsFixture } from './fixtures.ts'
-import { NOTICE_NO_CLI } from './model.ts'
+import { NOTICE_NO_CLI, TEMP_TERMINAL_TITLE } from './model.ts'
 import * as main from './worker.ts'
 
 const NOW = 1_800_000_000_000
@@ -88,18 +88,13 @@ test('a CLI that cannot read this computer falls back to the host API', async ()
   assert.match(snap.notices[0] ?? '', /Orca CLI failed \(Orca is not running\)/)
 })
 
-/** This computer's Orca with the paired server's rows in `workspace.list` (`runtime:env-1`). */
-function pairedHost(opts: { remoteTerminal?: string | null; floatingOpen?: boolean } = {}) {
+/** This computer's Orca with a paired server; `workspace.list` lists only this computer's rows. */
+function pairedHost(opts: { floatingOpen?: boolean } = {}) {
   return mockHost({
     results: {
       'workspace.list': { workspaces: workspaceRowsFixture(NOW), truncated: false },
       'project.list': { projects: [], truncated: false },
-      'agents.list': (params: { workspaceId?: string }) => ({
-        agents:
-          params.workspaceId === 'wt-remote-receipt' && opts.remoteTerminal
-            ? [{ terminalId: opts.remoteTerminal, title: 'Receipt email template', agent: 'gemini', state: 'done', stateStartedAt: NOW }]
-            : []
-      }),
+      'agents.list': { agents: [] },
       'statusBar.update': { ok: true },
       'workspace.open': { opened: true },
       'terminal.focus': { focused: true },
@@ -139,60 +134,154 @@ test('open routing: this computer’s workspace → workspace.open', async () =>
   assert.deepEqual(w.refusals, [])
 })
 
-test('open routing: a chat on another host → workspace.open with its runtime row, in this window', async () => {
+const remoteCalls = (calls: string[][], from: number) =>
+  calls.slice(from).filter((c) => c[c.indexOf('--environment') + 1] === 'Build server' && !(c[0] === 'worktree' && c[1] === 'ps') && c[0] !== 'repo')
+
+test('open routing: a terminal agent on another host → only terminal switch to its own terminal', async () => {
+  const calls: string[][] = []
+  const { w, ws } = await pairedWorker({}, calls)
+  const term = ws('receipt-email')
+  assert.equal(term.agents[0]?.kind, 'terminal')
+  const from = calls.length
+  const r = await w.request('board.open', { workspaceId: term.id, agentId: term.agents[0]?.id })
+  assert.deepEqual(r, { ok: true, how: 'terminal switch' })
+  assert.deepEqual(remoteCalls(calls, from), [
+    ['terminal', 'list', '--environment', 'Build server', '--worktree', 'identity:wt2:runtime:shop-mail'],
+    ['terminal', 'switch', '--environment', 'Build server', '--terminal', 'term_receipt']
+  ])
+  // No temporary terminal, no host API routing, never `worktree activate` on the server.
+  assert.equal(w.host.callsOf('workspace.open').length, 0)
+  assert.equal(w.host.callsOf('terminal.focus').length, 0)
+  assert.equal(activateOn(calls, 'Build server').length, 0)
+  assert.deepEqual(w.refusals, [])
+})
+
+test('open routing: a chat on another host whose workspace has a terminal → switch to that terminal', async () => {
+  const calls: string[][] = []
+  const base = cliAnswers(NOW)
+  main.deps.cli = async (args) => {
+    calls.push([...args])
+    if (args[0] === 'terminal' && args[1] === 'list' && args.includes('identity:wt2:runtime:pay-flaky')) {
+      return { result: { terminals: [{ handle: 'term_gone', connected: false }, { handle: 'term_shell', connected: true }] } }
+    }
+    const result = base(args)
+    return result === undefined ? { error: 'unknown' } : { result }
+  }
+  main.deps.floating = null
+  main.deps.now = () => NOW
+  worker = await mountWorker(main, { host: pairedHost() })
+  const snap = await worker.request('board.snapshot', { force: true })
+  const remote = snap.workspaces.find((x) => x.name === 'flaky-tests')
+  const from = calls.length
+  const r = await worker.request('board.open', { workspaceId: remote?.id ?? '', agentId: remote?.agents[0]?.id })
+  assert.deepEqual(r, { ok: true, how: 'terminal switch' })
+  assert.deepEqual(remoteCalls(calls, from).map((c) => c.slice(0, 2).concat(c.at(-1) ?? '')), [
+    ['terminal', 'list', 'identity:wt2:runtime:pay-flaky'],
+    ['terminal', 'switch', 'term_shell']
+  ])
+})
+
+test('open routing: a chat-only workspace on another host → create, switch, close a temporary terminal', async () => {
   const calls: string[][] = []
   const { w, ws, snap } = await pairedWorker({}, calls)
   const remote = ws('flaky-tests')
-  assert.equal(remote.hostId, 'runtime:env-1', 'the environment id from `environment list`')
+  const from = calls.length
   const r = await w.request('board.open', { workspaceId: remote.id, agentId: remote.agents[0]?.id })
-  assert.deepEqual(r, { ok: true, how: 'workspace.open' })
-  assert.deepEqual(w.host.callsOf('workspace.open').at(-1), { workspaceId: 'identity:wt2:runtime:pay-flaky' })
-  // A child on another host opens the same way.
+  assert.deepEqual(r, { ok: true, how: 'temporary terminal' })
+  assert.deepEqual(remoteCalls(calls, from), [
+    ['terminal', 'list', '--environment', 'Build server', '--worktree', 'identity:wt2:runtime:pay-flaky'],
+    ['terminal', 'create', '--environment', 'Build server', '--worktree', 'identity:wt2:runtime:pay-flaky', '--title', TEMP_TERMINAL_TITLE],
+    ['terminal', 'switch', '--environment', 'Build server', '--terminal', 'term_board-temp'],
+    ['terminal', 'close', '--environment', 'Build server', '--terminal', 'term_board-temp']
+  ])
+  assert.ok(!calls.slice(from).some((c) => c.includes('--focus')), 'the terminal is created without --focus')
+  // A child on another host opens the same way, from its workspace row too.
   const child = ws('payment-step')
   assert.equal(snap.workspaces.find((x) => x.id === child.parentId)?.host, 'Local')
-  await w.request('board.open', { workspaceId: child.id, agentId: child.agents[0]?.id })
-  assert.deepEqual(w.host.callsOf('workspace.open').at(-1), { workspaceId: 'identity:wt2:runtime:shop-pay' })
+  const r2 = await w.request('board.open', { workspaceId: child.id })
+  assert.deepEqual(r2, { ok: true, how: 'temporary terminal' })
+  assert.equal(w.host.callsOf('workspace.open').length, 0, 'workspace.list has no row for a paired server')
   assert.equal(activateOn(calls, 'Build server').length, 0, 'never worktree activate for another host')
   assert.deepEqual(w.refusals, [])
 })
 
-test('open routing: a terminal agent on another host → terminal.focus when the API knows its terminal', async () => {
+/** A fake CLI whose `terminal switch` answers as given; the rest from the fixtures. */
+async function remoteWithSwitch(switchAnswer: (args: readonly string[]) => Promise<Awaited<ReturnType<CliRunner>>>) {
   const calls: string[][] = []
-  const { w, ws } = await pairedWorker({ remoteTerminal: 't-remote-receipt' }, calls)
-  const term = ws('receipt-email')
-  assert.equal(term.agents[0]?.kind, 'terminal')
-  const r = await w.request('board.open', { workspaceId: term.id, agentId: term.agents[0]?.id })
-  assert.deepEqual(r, { ok: true, how: 'terminal.focus' })
-  // Mapped by path: the row id differs from the CLI's identity key.
-  assert.deepEqual(w.host.callsOf('agents.list').at(-1), { workspaceId: 'wt-remote-receipt' })
-  assert.deepEqual(w.host.callsOf('terminal.focus').at(-1), { terminalId: 't-remote-receipt' })
-  assert.equal(activateOn(calls, 'Build server').length, 0)
-})
-
-test('open routing: a terminal agent on another host → CLI terminal switch otherwise', async () => {
-  const calls: string[][] = []
-  const { w, ws } = await pairedWorker({ remoteTerminal: null }, calls)
-  const term = ws('receipt-email')
-  const r = await w.request('board.open', { workspaceId: term.id, agentId: term.agents[0]?.id })
-  assert.deepEqual(r, { ok: true, how: 'terminal switch' })
-  assert.deepEqual(calls.at(-1), ['terminal', 'switch', '--environment', 'Build server', '--terminal', 'term_receipt'])
-  assert.equal(w.host.callsOf('terminal.focus').length, 0)
-  assert.equal(activateOn(calls, 'Build server').length, 0)
-})
-
-test('open routing: another host Orca does not list → a message, never worktree activate', async () => {
-  const calls: string[][] = []
-  main.deps.cli = fakeCli(calls)
+  const base = cliAnswers(NOW)
+  main.deps.cli = async (args) => {
+    calls.push([...args])
+    if (args[0] === 'terminal' && args[1] === 'switch') return switchAnswer(args)
+    const result = base(args)
+    return result === undefined ? { error: 'unknown' } : { result }
+  }
   main.deps.floating = null
   main.deps.now = () => NOW
-  worker = await mountWorker(main, {
-    host: mockHost({ results: { 'workspace.list': { workspaces: [], truncated: false }, 'statusBar.update': { ok: true } } })
+  worker = await mountWorker(main, { host: pairedHost() })
+  const snap = await worker.request('board.snapshot', { force: true })
+  const ws = (name: string) => snap.workspaces.find((x) => x.name === name)
+  return { w: worker, calls, ws }
+}
+
+const closes = (calls: string[][]) => calls.filter((c) => c[0] === 'terminal' && c[1] === 'close')
+
+test('open routing: the temporary terminal is closed when the switch fails, and only that one', async () => {
+  for (const fail of [
+    async () => ({ error: 'the paired server went away' }),
+    async (): Promise<never> => {
+      throw new Error('the CLI crashed')
+    }
+  ]) {
+    const { w, calls, ws } = await remoteWithSwitch(fail)
+    const remote = ws('flaky-tests')
+    const r = await w.request('board.open', { workspaceId: remote?.id ?? '', agentId: remote?.agents[0]?.id })
+    assert.equal(r.ok, false)
+    assert.match(r.error ?? '', /Orca could not move this window to the Build server workspace \((the paired server went away|the CLI crashed)\)/)
+    assert.deepEqual(closes(calls), [['terminal', 'close', '--environment', 'Build server', '--terminal', 'term_board-temp']])
+    assert.equal(activateOn(calls, 'Build server').length, 0)
+    await w.deactivate()
+    worker = undefined
+  }
+})
+
+test('open routing: navigated false → the inline notice with the reason; an existing terminal is never closed', async () => {
+  const { w, calls, ws } = await remoteWithSwitch(async () => ({ result: { focus: { navigated: false, reason: 'no desktop window is open' } } }))
+  const term = ws('receipt-email')
+  const r = await w.request('board.open', { workspaceId: term?.id ?? '', agentId: term?.agents[0]?.id })
+  assert.deepEqual(r, {
+    ok: false,
+    how: 'terminal switch',
+    error: 'Orca did not move this window to the Build server workspace (no desktop window is open).'
   })
+  assert.deepEqual(closes(calls), [], 'the agent’s own terminal stays open')
+
+  const chat = ws('flaky-tests')
+  const r2 = await w.request('board.open', { workspaceId: chat?.id ?? '', agentId: chat?.agents[0]?.id })
+  assert.equal(r2.ok, false)
+  assert.equal(r2.how, 'temporary terminal')
+  assert.deepEqual(closes(calls), [['terminal', 'close', '--environment', 'Build server', '--terminal', 'term_board-temp']])
+  assert.equal(activateOn(calls, 'Build server').length, 0)
+})
+
+test('open routing: a server that cannot create the terminal → a notice, nothing closed, never worktree activate', async () => {
+  const calls: string[][] = []
+  const base = cliAnswers(NOW)
+  main.deps.cli = async (args) => {
+    calls.push([...args])
+    if (args[0] === 'terminal' && args[1] === 'create') return { error: 'workspace is asleep' }
+    const result = base(args)
+    return result === undefined ? { error: 'unknown' } : { result }
+  }
+  main.deps.floating = null
+  main.deps.now = () => NOW
+  worker = await mountWorker(main, { host: pairedHost() })
   const snap = await worker.request('board.snapshot', { force: true })
   const remote = snap.workspaces.find((x) => x.name === 'flaky-tests')
-  const r = await worker.request('board.open', { workspaceId: remote?.id ?? '', agentId: remote?.agents[0]?.id })
+  const r = await worker.request('board.open', { workspaceId: remote?.id ?? '' })
   assert.equal(r.ok, false)
-  assert.match(r.error ?? '', /cannot be shown in this window/)
+  assert.match(r.error ?? '', /Build server did not open the terminal .*\(workspace is asleep\)/)
+  assert.deepEqual(closes(calls), [])
+  assert.ok(!calls.some((c) => c[1] === 'switch'))
   assert.equal(activateOn(calls, 'Build server').length, 0)
 })
 
