@@ -77,6 +77,15 @@
   .noagent { color: var(--faint); font-size: 12px; padding: 2px 0 2px 2px; }
   .empty { color: var(--faint); padding: 30px 14px; text-align: center; }
   .errors { margin: 8px 14px; padding: 8px 10px; border: 1px solid #5a2f2b; background: #2b1c1a; color: #f0a39c; border-radius: 8px; font-size: 12px; }
+  .agent .t .more { margin-left: auto; flex-shrink: 0; background: none; border: 0; color: var(--faint); cursor: pointer; border-radius: 6px; padding: 0 6px; font-size: 15px; line-height: 20px; }
+  .agent .t .more:hover, .agent .t .more.on { background: var(--hover); color: var(--text); }
+  .agent .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; cursor: default; }
+  .agent .actions button { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; font-size: 12px; color: var(--muted); cursor: pointer; }
+  .agent .actions button:hover:not(:disabled) { color: var(--text); border-color: #555; }
+  .agent .actions button:disabled { opacity: .45; cursor: default; }
+  .agent .afeed { font-size: 12px; margin-top: 6px; color: var(--muted); cursor: default; }
+  .agent .afeed.success { color: var(--done); } .agent .afeed.warning { color: var(--waiting); } .agent .afeed.danger { color: var(--fail); }
+  .agent .afeed code { display: block; margin-top: 4px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; user-select: all; word-break: break-all; color: var(--text); }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #2d2d2d; border: 1px solid #444; padding: 8px 14px; border-radius: 8px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: 1; }
   .from { font-size: 11px; color: var(--faint); }
@@ -169,6 +178,9 @@ state.hidden = Object.assign({}, S.hidden);
 state.elementsOpen = !!S.elementsOpen;
 const save = () => localStorage.setItem('ab-state', JSON.stringify({ view: state.view, host: state.host, filters: state.filters, closed: state.closed, hidden: state.hidden, elementsOpen: state.elementsOpen }));
 let data = null;
+// ⋯ actions: one card's row open at a time (not saved), and what its last action said.
+let actionsFor = null;
+let feedback = null;
 
 const hostChip = (h) => `<span class="host">${esc(h)}</span>`;
 
@@ -320,8 +332,29 @@ function parentLine(w) {
   return `<div class="parent" data-open="${esc(p.id)}" title="Open the parent in Orca">${icon('branch')}<span>child of</span><b>${esc(label)}</b>${p.host !== w.host ? `<span class="pdot">on ${esc(p.host)}</span>` : ''}${chat ? `<span class="pchat">· ${esc(chat)}</span>` : ''}</div>`;
 }
 
+const SESSION_PREFIX = 'orca_session_id:';
+const NO_SESSION = 'This agent has no Orca session id yet';
+// `orca_session_id:<id>`, never with the prefix twice.
+const sessionRef = (a) => (a.sessionId ? (a.sessionId.startsWith(SESSION_PREFIX) ? a.sessionId : SESSION_PREFIX + a.sessionId) : null);
+const agentKey = (a, w) => `${w.id}|${a.sessionId || a.paneKey || w.agents.indexOf(a)}`;
+const canMarkRead = (a, w) => !w.floating && !!w.selector && (w.unread || cardStatus(a, w)[0] === 'unread');
+
+function cardActions(a, w, key) {
+  const ref = sessionRef(a);
+  const where = w.floating ? 'the floating workspace' : `${data.projects[w.project] || w.repo}/${w.name}`;
+  const f = feedback && feedback.key === key ? feedback : null;
+  return `<div class="actions" data-actions>
+    <button data-act="session" ${ref ? `title="Copies ${esc(ref)}"` : `disabled title="${NO_SESSION}"`}>Copy Orca session id</button>
+    ${canMarkRead(a, w) ? `<button data-act="read" title="Orca keeps read state per workspace: marks ${esc(where)} read, with every agent in it">Mark workspace as read</button>` : ''}
+    ${!w.floating && w.path ? `<button data-act="path" title="The folder on ${esc(w.host)}: ${esc(w.path)}">Copy workspace path</button>` : ''}
+  </div>
+  ${ref ? '' : `<div class="afeed">${NO_SESSION}.</div>`}
+  ${f ? `<div class="afeed ${f.tone}" data-actions>${esc(f.text)}${f.manual ? `<code>${esc(f.manual)}</code>` : ''}</div>` : ''}`;
+}
+
 function agentCard(a, w) {
   const [st, ic, label] = cardStatus(a, w);
+  const key = agentKey(a, w);
   const title = a.title || a.prompt || '(untitled)';
   const msg = !on('reply') ? '' : a.last ? `<b>Agent:</b> ${esc(a.last)}` : a.prompt ? `<b>You:</b> ${esc(a.prompt)}` : '';
   const where = [
@@ -336,12 +369,14 @@ function agentCard(a, w) {
     on('terminal') && a.kind === 'terminal' ? '<span>terminal</span>' : '',
   ].filter(Boolean).join('·');
   const meta = [on('status') ? `<span class="badge ${st}">${label}</span>` : '', on('children') && latestOf(w) === a ? childChip(w) : '', tail].join('');
-  return `<div class="agent st-${st}" data-open="${esc(w.id)}" title="Open in Orca">
+  const open = actionsFor === key;
+  return `<div class="agent st-${st}" data-open="${esc(w.id)}" data-key="${esc(key)}" title="Open in Orca">
     ${where ? `<div class="where">${where}</div>` : ''}
     ${on('parent') ? parentLine(w) : ''}
-    <div class="t">${icon(ic, `st-${st} ${st === 'working' ? 'spin' : ''}`)}<span class="title">${esc(title)}</span></div>
+    <div class="t">${icon(ic, `st-${st} ${st === 'working' ? 'spin' : ''}`)}<span class="title">${esc(title)}</span><button class="more ${open ? 'on' : ''}" data-more title="Actions" aria-label="Actions">⋯</button></div>
     ${msg ? `<div class="msg">${msg}</div>` : ''}
     ${meta ? `<div class="meta">${meta}</div>` : ''}
+    ${open ? cardActions(a, w, key) : ''}
   </div>`;
 }
 
@@ -461,6 +496,39 @@ async function load() {
   }
 }
 
+function findAgent(key) {
+  for (const w of data.workspaces) for (const a of w.agents) if (agentKey(a, w) === key) return [a, w];
+  return [null, null];
+}
+function say(f, ms = 0) {
+  feedback = f;
+  clearTimeout(say.h);
+  if (f && ms) say.h = setTimeout(() => { if (feedback === f) { feedback = null; render(); } }, ms);
+  render();
+}
+async function copyText(key, text, what) {
+  try {
+    await navigator.clipboard.writeText(text);
+    say({ key, tone: 'success', text: `Copied ${text}` }, 4000);
+  } catch (e) {
+    say({ key, tone: 'warning', text: `Could not copy the ${what} (${e && e.message ? e.message : 'the browser refused'}). Select it here and copy it:`, manual: text });
+  }
+}
+async function cardAction(key, act) {
+  const [a, w] = findAgent(key);
+  if (!a) return;
+  if (act === 'session') { const ref = sessionRef(a); if (ref) copyText(key, ref, 'Orca session id'); return; }
+  if (act === 'path') return copyText(key, w.path, 'workspace path');
+  if (act === 'read') {
+    const where = `${data.projects[w.project] || w.repo}/${w.name}`;
+    const r = await fetch('/api/read', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ env: w.env, selector: w.selector }) });
+    const j = await r.json();
+    if (j.error) return say({ key, tone: 'danger', text: `Could not mark ${where} read: ${j.error}` });
+    say({ key, tone: 'success', text: `Marked ${where} read` }, 4000);
+    load();
+  }
+}
+
 async function openWs(id) {
   const w = data.workspaces.find((x) => x.id === id);
   if (!w) return;
@@ -479,6 +547,12 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-elements-close]')) { state.elementsOpen = false; save(); return render(); }
   if (e.target.closest('[data-show-all]')) { state.hidden = {}; save(); return render(); }
   if (e.target.closest('#elements')) return;
+  // ⋯ and its row never open the agent.
+  const more = e.target.closest('[data-more]');
+  if (more) { const k = more.closest('[data-key]').dataset.key; actionsFor = actionsFor === k ? null : k; if (feedback && feedback.key !== actionsFor) feedback = null; return render(); }
+  const act = e.target.closest('[data-act]');
+  if (act) return cardAction(act.closest('[data-key]').dataset.key, act.dataset.act);
+  if (e.target.closest('[data-actions]') || e.target.closest('.afeed')) return;
   const o = e.target.closest('[data-open]'); if (o) return openWs(o.dataset.open);
 });
 document.getElementById('host').addEventListener('change', (e) => { state.host = e.target.value; save(); render(); });

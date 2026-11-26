@@ -262,6 +262,7 @@ export function cliAnswers(now = Date.now()): (args: readonly string[]) => unkno
     if (args[0] === 'worktree' && args[1] === 'ps') return byEnv.get(env)?.ps
     if (args[0] === 'agent' && args[1] === 'show') return f.floatingShows.find((s) => (s as { orcaSessionId: string }).orcaSessionId === args[2])
     if (args[0] === 'worktree' && args[1] === 'activate') return { ok: true }
+    if (args[0] === 'worktree' && args[1] === 'set') return { worktree: { worktreeId: args[args.indexOf('--worktree') + 1] } }
     if (args[0] === 'terminal' && args[1] === 'list') {
       const sel = args[args.indexOf('--worktree') + 1]
       const ws = (obj(byEnv.get(env)?.ps).worktrees as Record<string, unknown>[] | undefined) ?? []

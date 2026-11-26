@@ -14,6 +14,7 @@ afterEach(async () => {
   delete main.deps.floating
   delete main.deps.now
   delete main.deps.debounceMs
+  delete main.deps.copy
 })
 
 function fakeCli(calls: string[][] = []): CliRunner {
@@ -322,4 +323,65 @@ test('agent events tell open panels to refresh', async () => {
   await worker.emit('agent.status.changed', { workspaceId: null, paneKey: 'tab-7:pane-1', terminalId: 't-9', state: 'waiting', receivedAt: 1 })
   await new Promise((r) => setTimeout(r, 50))
   assert.ok(worker.posts.some((p) => p.event === 'board.changed'))
+})
+
+// -- Card actions (v0.1.5) -------------------------------------------------------------------------
+
+test('board.copy hands the text to the clipboard writer as is', async () => {
+  const copied: string[] = []
+  main.deps.cli = fakeCli()
+  main.deps.floating = null
+  main.deps.copy = async (text) => {
+    copied.push(text)
+    return { ok: true, tool: 'xclip' }
+  }
+  worker = await mountWorker(main, { host: hostOnly() })
+  assert.deepEqual(await worker.request('board.copy', { text: 'orca_session_id:s-keys' }), { ok: true, tool: 'xclip' })
+  assert.deepEqual(copied, ['orca_session_id:s-keys'])
+  // Nothing, or far too much, is refused without running a tool.
+  assert.deepEqual(await worker.request('board.copy', { text: '' }), { ok: false, error: 'nothing to copy' })
+  assert.deepEqual(await worker.request('board.copy', { text: 'x'.repeat(5000) }), { ok: false, error: 'nothing to copy' })
+  assert.equal(copied.length, 1)
+  // A writer that fails says why.
+  main.deps.copy = async () => ({ ok: false, error: 'no clipboard tool on this computer (looked for wl-copy, xclip, xsel)' })
+  const r = await worker.request('board.copy', { text: '/home/dev/code/web-shop' })
+  assert.deepEqual(r, { ok: false, error: 'no clipboard tool on this computer (looked for wl-copy, xclip, xsel)' })
+  assert.deepEqual(worker.refusals, [])
+})
+
+test('board.markRead runs worktree set --read on the workspace’s own host', async () => {
+  const calls: string[][] = []
+  main.deps.cli = fakeCli(calls)
+  main.deps.floating = async () => ['s-float']
+  main.deps.now = () => NOW
+  worker = await mountWorker(main, { host: hostOnly() })
+  const snap = await worker.request('board.snapshot', { force: true })
+  const mail = snap.workspaces.find((w) => w.name === 'receipt-email')
+  assert.ok(mail?.unread)
+  const r = await worker.request('board.markRead', { workspaceId: mail?.id ?? '' })
+  assert.deepEqual(r, { ok: true })
+  const sets = calls.filter((c) => c[0] === 'worktree' && c[1] === 'set')
+  assert.deepEqual(sets, [['worktree', 'set', '--environment', 'Build server', '--worktree', 'identity:wt2:runtime:shop-mail', '--read']])
+  // Never for the floating workspace (no selector), nor a workspace that is gone.
+  const float = snap.workspaces.find((w) => w.floating)
+  assert.equal((await worker.request('board.markRead', { workspaceId: float?.id ?? '' })).ok, false)
+  assert.equal((await worker.request('board.markRead', { workspaceId: 'Local|nope' })).ok, false)
+  assert.equal(calls.filter((c) => c[0] === 'worktree' && c[1] === 'set').length, 1)
+})
+
+test('board.markRead: a CLI error comes back; without the CLI it says it needs it', async () => {
+  main.deps.cli = async (args) => (args[0] === 'worktree' && args[1] === 'set' ? { error: 'worktree not found' } : fakeCli()(args))
+  main.deps.floating = null
+  main.deps.now = () => NOW
+  worker = await mountWorker(main, { host: hostOnly() })
+  const snap = await worker.request('board.snapshot', { force: true })
+  const mail = snap.workspaces.find((w) => w.name === 'receipt-email')
+  assert.deepEqual(await worker.request('board.markRead', { workspaceId: mail?.id ?? '' }), { ok: false, error: 'worktree not found' })
+  await worker.deactivate()
+
+  main.deps.cli = null
+  worker = await mountWorker(main, { host: hostOnly() })
+  const hostSnap = await worker.request('board.snapshot', { force: true })
+  const r = await worker.request('board.markRead', { workspaceId: hostSnap.workspaces[0]?.id ?? '' })
+  assert.equal(r.ok, false)
 })

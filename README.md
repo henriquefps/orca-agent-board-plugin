@@ -14,6 +14,8 @@ work back. The built-in sidebar shows workspaces; Agent Board shows **agents**:
   label; finished and seen agents fade back.
 - **Cards your way.** The **Card elements** button in the header picks which parts of a card show (project,
   machine, parent, last reply, status label, children, agent kind, time, subagents, terminal tag).
+- **Card actions.** The ⋯ button on each card copies the agent's Orca session id
+  (`orca_session_id:…`, ready to message it), marks its workspace read, or copies the workspace's folder.
 - **Everything opens here.** Agents on other machines open in this computer's Orca window.
 - **Three views:** List (agents by last activity), Projects (grouped by repository, children nested under
   their parent) and Tree (the full parent/child chain across hosts and projects).
@@ -46,8 +48,8 @@ On Linux the CLI is `orca-ide` outside Orca's own terminals.
 ### What Orca asks you to approve
 
 - **Runs its own code** in a separate Node.js process on the Orca host, with your user account's access to
-  that machine (`trusted-worker`). The worker runs the Orca CLI and, for floating workspace chats, the
-  `sqlite3` command (read-only).
+  that machine (`trusted-worker`). The worker runs the Orca CLI, for floating workspace chats the
+  `sqlite3` command (read-only), and, when you press a ⋯ copy action, the platform's clipboard tool.
 - The capabilities below.
 - What it contributes: the **Agent Board** panel in the right sidebar, the **Agent Board: Show** command,
   the **need you** status bar item, the events it listens to and three settings.
@@ -58,7 +60,7 @@ On Linux the CLI is `orca-ide` outside Orca's own terminals.
 | --- | --- |
 | `workspace:read` | `workspace.list` and `project.list` (the board when the Orca CLI is missing, and finding a workspace to open); `workspace.changed`, `workspace.created`, `workspace.removed` events to refresh. |
 | `agent:read` | `agents.list` (agents when the CLI is missing, and the terminal of a terminal agent); `agent.status.changed` to refresh live. |
-| `workspace:write` | `workspace.open` and `terminal.focus` to show an agent in Orca; `commands.run` to show the floating workspace and, as a fallback, the right sidebar. |
+| `workspace:write` | `workspace.open` and `terminal.focus` to show an agent in Orca; `commands.run` to show the floating workspace and, as a fallback, the right sidebar. (Mark workspace as read goes through the Orca CLI, like the board itself.) |
 | `settings:own` | The three settings below. |
 
 The status bar item and the panel ↔ worker requests need no capability. Panel state (view, filters, host,
@@ -100,6 +102,24 @@ card elements, collapsed groups) is kept by Orca for the plugin and needs no `st
   that differs from the folder name) wins on any host, else this computer's. Children nest under their
   parent; a child whose parent is in another project says "child of …".
 - **Tree:** the whole parent/child chain across hosts and projects.
+- **⋯ Actions** (the button at the right of each card's title, in every view; it never opens the agent):
+  pressing it shows an actions row at the bottom of that card, pressing it again hides it, and only one
+  card's row is open at a time (not remembered across reloads).
+  - **Copy Orca session id** copies exactly `orca_session_id:<id>` (for example
+    `orca_session_id:0b1c2d3e-4f50-4617-8a9b-c0d1e2f30415`), the address other agents and the `orca`
+    CLI take. It is disabled, with "This agent has no Orca session id yet", for a terminal agent that has
+    not reported to Orca, and when the board runs without the CLI.
+  - **Mark workspace as read** runs `orca worktree set --environment <host> --worktree <workspace> --read`
+    and refreshes the board. Orca keeps read state per workspace, so it clears the workspace's unread dot
+    for every agent in it, on whichever machine it lives. Shown only on an unread card or a card in an
+    unread workspace; not for floating workspace chats, and it needs the CLI.
+  - **Copy workspace path** copies the workspace's folder on its machine (the tooltip names the machine).
+    Not for floating workspace chats.
+  - Copying: the host API has no clipboard, so the worker writes it with the platform's tool, the text on
+    stdin and never in a command line: `pbcopy` on macOS, `clip.exe` on Windows, and on Linux `wl-copy`,
+    else `xclip -selection clipboard`, else `xsel --clipboard --input` (only those found on `PATH`). The
+    card then says "Copied …" for a few seconds. When no tool works it shows the text in a code box to
+    select and copy by hand, and why.
 - **Click** an agent or workspace to show it in Orca.
   - This computer: it opens in this window: `terminal.focus` for a terminal agent, else
     `workspace.open`, else `orca worktree activate`.
@@ -172,6 +192,10 @@ minutes). [docs/orca-data-sources.md](docs/orca-data-sources.md) lists what each
 - Pressing the status bar item shows the panel through `orca plugin open`; if that fails it toggles the
   right sidebar.
 - The panel draws at most 60 agent cards at a time; **Show more** adds 60 more.
+- **No right-click menu.** Orca's plugin components have no context menu or secondary click, so the card
+  actions sit behind the ⋯ button, like the ⋯ on Orca's own Agent Session History cards.
+- **Copying on Linux** needs `wl-copy` (Wayland) or `xclip`/`xsel` (X11) installed; without one, the board
+  shows the text to copy by hand.
 
 ## Develop
 
@@ -186,6 +210,7 @@ orca plugin check . --json        # renders src/panel.check.ts scenarios from in
 - `src/model.ts`: the board's rules (status, filters, children, views, project names), shared by worker and panel.
 - `src/sources.ts`: Orca's answers (CLI JSON, host API) → the board snapshot.
 - `src/cli.ts`: finding and running the Orca CLI; floating chats.
+- `src/clipboard.ts`: copying from the worker with the platform's clipboard tool.
 - `src/worker.ts`: refresh, events, opening, status bar.
 - `src/panel.tsx`: the panel, drawn with Orca's components so it follows Orca's theme.
 - `prototype/`: the HTML prototype the plugin was ported from (`node prototype/server.mjs`, see below).
@@ -199,6 +224,9 @@ Needs Node 20+ and the Orca desktop app running. It reads Orca through its CLI
 node prototype/server.mjs
 # open http://localhost:4870
 ```
+
+It has the same ⋯ card actions: the copies use the browser's clipboard (falling back to the text in a
+box), and Mark workspace as read asks the server, which runs `orca worktree set … --read`.
 
 ## License
 

@@ -84,6 +84,7 @@ export function agentFromCli(wsId: string, a0: unknown, index = 0): BoardAgent {
   return {
     id: `${wsId}|${sessionId ?? paneKey ?? `#${index}`}`,
     sessionId,
+    orcaSessionId: sessionId,
     paneKey,
     terminal: kind === 'terminal' && address.startsWith('term_') ? address : null,
     kind,
@@ -222,6 +223,7 @@ export function floatingWorkspace(shows: readonly unknown[]): BoardWorkspace | n
     agents.push({
       id: `${id}|${sessionId ?? str(p.paneKey)}`,
       sessionId,
+      orcaSessionId: sessionId,
       paneKey: str(p.paneKey) || null,
       terminal: null,
       kind: 'chat',
@@ -312,6 +314,8 @@ export function snapshotFromHost(
       .map((a, i) => ({
         id: `${id}|${a.sessionId ?? a.terminalId ?? i}`,
         sessionId: a.sessionId ?? null,
+        // `agents.list` names the agent's own session, not Orca's: no Orca session id here.
+        orcaSessionId: null,
         paneKey: null,
         terminal: a.terminalId,
         kind: a.terminalId ? ('terminal' as const) : ('chat' as const),

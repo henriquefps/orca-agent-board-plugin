@@ -23,7 +23,7 @@ const LAUNCHER: Partial<Record<NodeJS.Platform, string>> = {
   win32: join('bin', 'orca.exe')
 }
 
-function onPath(name: string, env: NodeJS.ProcessEnv): string | null {
+export function onPath(name: string, env: NodeJS.ProcessEnv): string | null {
   for (const dir of (env.PATH ?? env.Path ?? '').split(delimiter)) {
     if (!dir || !isAbsolute(dir)) continue
     const p = join(dir, name)

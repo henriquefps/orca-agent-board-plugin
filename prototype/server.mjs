@@ -240,6 +240,16 @@ createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ ...r, how }));
     }
+    // ⋯ Mark workspace as read: Orca keeps read state per workspace, on whichever host it lives.
+    if (req.url === '/api/read' && req.method === 'POST') {
+      const { env, selector } = await body(req);
+      const r = selector
+        ? await orca(['worktree', 'set', '--environment', env || 'local', '--worktree', selector, '--read'])
+        : { error: 'the floating workspace has no read state to clear' };
+      console.log(`read ${env} ${selector}: ${r.error || 'ok'}`);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify(r));
+    }
     res.writeHead(404); res.end();
   } catch (e) {
     res.writeHead(500, { 'content-type': 'application/json' });

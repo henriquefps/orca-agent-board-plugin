@@ -93,6 +93,13 @@ export default defineCheck({
     },
     persisted: { plugin: { view: 'list', filters: allOff, openNotice: { tone: 'warning', text: FLOATING_CLOSED } } }
   },
+  // v0.1.5. Every card with its ⋯ Actions button. Which card's actions row is open is a plain,
+  // non-persisted atom, and check can neither preset it nor press, so the open row, each action
+  // and the Code fallback are proven in src/panel.test.tsx.
+  cardActions: {
+    requests: { 'board.snapshot': board },
+    persisted: { plugin: { view: 'list', filters: { ...allOff, hideChildren: false } } }
+  },
   cliUnavailable: {
     requests: { 'board.snapshot': () => hostOnlySnapshotFixture() },
     persisted: { plugin: { view: 'list', filters: allOff } }
