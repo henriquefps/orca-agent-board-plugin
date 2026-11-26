@@ -100,16 +100,14 @@ card elements, collapsed groups) is kept by Orca for the plugin and needs no `st
   that differs from the folder name) wins on any host, else this computer's. Children nest under their
   parent; a child whose parent is in another project says "child of …".
 - **Tree:** the whole parent/child chain across hosts and projects.
-- **Click** an agent or workspace to show it in **this computer's** Orca window, on any host.
-  - This computer: `terminal.focus` for a terminal agent, else `workspace.open`, else
-    `orca worktree activate`.
-  - A paired Orca server: Orca does not list its workspaces for plugins, so the board uses the CLI's
-    `orca terminal switch --environment <server>`, which moves this window to a terminal's workspace: the
-    agent's own terminal, else one of the workspace's terminals. A workspace with only chats gets a
-    temporary terminal titled "Agent Board": the board creates it, switches to it and closes it again
-    right away (also when the switch fails), and never closes any other terminal.
-  - It counts as opened only when Orca says the window moved; otherwise the panel shows why. The board
-    never runs `worktree activate` for another machine (that opens the other machine's window).
+- **Click** an agent or workspace to show it in Orca.
+  - This computer: it opens in this window: `terminal.focus` for a terminal agent, else
+    `workspace.open`, else `orca worktree activate`.
+  - A paired Orca server: it **cannot** open in this window (see Known limits). The board runs the CLI's
+    `orca terminal switch --environment <server>` to the agent's terminal or one of the workspace's
+    terminals; a workspace with only chats gets a temporary terminal titled "Agent Board" that the board
+    creates, switches to and closes again right away (also when the switch fails). What moves is the Orca
+    window **on that machine**, when it runs the desktop app; nothing changes in this window.
 - **Floating workspace:** a click on one of its chats maximizes it. When it is closed, Orca does not let
   plugins open it, so the panel says: "The floating workspace is closed. Press ⌘⌥A (Ctrl+Alt+A on
   Windows/Linux) to open it, then click the chat again." (dismissible).
@@ -153,14 +151,24 @@ minutes). [docs/orca-data-sources.md](docs/orca-data-sources.md) lists what each
   user data folder, read-only, with the `sqlite3` command) and asks `orca agent show` for each. Without
   `sqlite3` or the file, the floating workspace is left out silently. Clicking one shows the floating
   workspace if it is open; plugins cannot open it, so when it is closed the panel tells you its shortcut.
-- **Other machines' workspaces** are not in the host API's `workspace.list` (Orca leaves paired servers
-  out of it), so `workspace.open` cannot reach them and they open through the Orca CLI. A chat-only
-  workspace briefly gets a temporary "Agent Board" terminal to show it; if a crash ever leaves one
-  behind, its title says where it came from and you can close it. The window shows the workspace with
-  whatever tab was last active there, not the chat you clicked.
+- **Agents on other machines cannot be opened in this window.** The board lists them, but a click cannot
+  show a paired Orca server's workspace in the window you are using:
+  - the host API's `workspace.list` leaves paired servers out (`hostScope.omittedHostIds`), so
+    `workspace.open` cannot reach them;
+  - the CLI commands that take `--environment <server>` (`worktree activate`, `terminal switch`) act on
+    **that server's** Orca: when the other machine runs the Orca desktop app, its own window moves to the
+    workspace, and this one does not. `terminal switch` still answers `navigated: true`, about that
+    window.
+
+  Checked on Orca 1.4.278. Use the board to see what runs elsewhere, and open those agents from Orca's
+  sidebar or on that machine. Agents on this computer open here as usual. A chat-only remote workspace
+  briefly gets a temporary "Agent Board" terminal; if a crash ever leaves one behind, its title says where
+  it came from and you can close it.
+- **No chat-tab focus.** Orca has no API to focus one chat tab: the window shows the agent's workspace
+  with whatever tab was last active there.
 - **Needs the Orca CLI:** parent and child workspaces, other Orca servers, one project per Git remote,
   display names from other hosts, linked PRs, last replies, per-agent unread and failed/interrupted
-  outcomes, and showing other Orca servers' workspaces in this window.
+  outcomes.
 - Pressing the status bar item shows the panel through `orca plugin open`; if that fails it toggles the
   right sidebar.
 - The panel draws at most 60 agent cards at a time; **Show more** adds 60 more.

@@ -29,7 +29,8 @@ this computer maps to its `workspace.list` row by id (`identity:<key>` or the wo
 
 ## Opening an agent
 
-Everything opens in **this computer's** Orca window, whatever host the agent runs on.
+Only this computer's workspaces can be shown in the window you are using. A paired Orca server's workspace
+cannot: see the CLI notes below.
 
 - Plugin API: `workspace.open` with the `workspace.list` id shows a workspace here; a paired server's
   workspace has no row, so it cannot be opened this way. `terminal.focus` focuses a terminal (ids from `agents.list` on
@@ -37,13 +38,15 @@ Everything opens in **this computer's** Orca window, whatever host the agent run
   the floating workspace, but only while it is open: when it is closed Orca answers
   "floatingWorkspace.maximize cannot run in this view", and the action that opens it
   (`floatingTerminal.toggle`, ⌘⌥A / Ctrl+Alt+A) is not available to plugins.
-- CLI: `terminal switch --environment <env> --terminal <handle>` navigates this computer's window to that
-  terminal's workspace, on any host (`result.focus.navigated: true`); a terminal agent's `address` in
+- CLI: `terminal switch --environment <env> --terminal <handle>` navigates **that host's** Orca window to the
+  terminal's workspace (`result.focus.navigated: true` is about that window). For a paired server that runs
+  the desktop app, its own window moves and this computer's does not (checked by hand on Orca 1.4.278; the
+  command's help text suggests otherwise); a terminal agent's `address` in
   `worktree ps` is its handle (`term_…`), and `terminal list --environment <env> --worktree <selector>`
   lists a workspace's terminals (`handle`, `connected`, `agentIdentity`). Chats are not terminals.
 - CLI, a workspace with only chats on a paired server: `terminal create --environment <env> --worktree
   <selector> --title "Agent Board"` (no `--focus`) gives `result.terminal.handle`; `terminal switch` to
-  it navigates this window there; `terminal close --environment <env> --terminal <handle>` removes it
+  it moves that server's window there, not this one; `terminal close --environment <env> --terminal <handle>` removes it
   again (`result.close.ptyKilled: true`). Checked by hand against a paired server's chat-only workspace.
 - CLI: `worktree activate --worktree <selector> --environment <env>` opens the workspace in **that host's
   own window**: the board uses it only for this computer (`--environment local`), as a fallback.
@@ -55,7 +58,8 @@ Everything opens in **this computer's** Orca window, whatever host the agent run
     workspace's connected terminals (an agent's first); with none, a temporary terminal: create, switch,
     then close it in a `finally`, so it is closed also when the switch fails. Only the handle the board
     created is ever closed. Success only when `navigated` is true; otherwise the panel's notice says why.
-    Never `worktree activate` (it opens the server's own window).
+    Never `worktree activate`. Either way, what moves is the server's own window (when it has one), not
+    this one: a known limit, see the README.
   - **No CLI** (host API snapshot): only this computer's workspaces are listed, opened as above.
 - Nothing focuses a specific **chat tab** yet: the board opens the agent's workspace.
 - Nothing in the host API shows a plugin's own panel: the status bar command uses `orca plugin open`.
@@ -84,8 +88,9 @@ Everything opens in **this computer's** Orca window, whatever host the agent run
 1. Parent links, Git remote identity and linked PRs in `workspace.list` / `project.list`.
 2. Per-agent unread, outcome, last prompt and last reply in `agents.list`.
 3. Paired servers in the host API: `workspace.list` (and so `workspace.open`) leaves them out
-   (`hostScope.omittedHostIds`), so a plugin cannot list or open their workspaces without the CLI, and a
-   chat-only one needs a temporary terminal to be shown.
+   (`hostScope.omittedHostIds`), and the CLI's `--environment <server>` commands move that server's window,
+   so nothing can show a paired server's workspace in the window you are using. A host API call (or CLI
+   flag) to show one here is needed.
 4. A way to list the floating workspace's chats.
 5. A host API (and CLI) call to focus a chat tab by session id, and one to show a plugin's own panel.
 6. Expose `floatingTerminal.toggle` (or a "show the floating workspace" action that opens it when

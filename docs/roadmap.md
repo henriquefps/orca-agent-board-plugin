@@ -49,12 +49,10 @@ like Orca's right sidebar (about 470 px). Used to settle what the board shows.
 
 ## v0.1.4 (done)
 
-- Other machines' workspaces open in **this computer's** window again. Orca leaves paired servers out of
-  the host API's `workspace.list`, so `workspace.open` never reached them: the board now uses the CLI's
-  `terminal switch --environment <server>` to the agent's or the workspace's terminal, and for a
-  chat-only workspace a temporary "Agent Board" terminal it creates, switches to and always closes.
-  Success only when Orca says the window navigated; otherwise the panel says why. Same capabilities
-  as v0.1.3.
+- Other machines' workspaces through the CLI's `terminal switch --environment <server>` (the agent's or
+  the workspace's terminal, or a temporary "Agent Board" terminal for a chat-only workspace). Tried on the
+  desktop: it moves the other machine's own window, not this one, so opening a paired server's agent in
+  this window stays a known limit (README). Same capabilities as v0.1.3.
 
 ## Later
 
