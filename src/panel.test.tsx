@@ -517,3 +517,163 @@ test('floating workspace closed: an inline, dismissible message says how to open
   assert.equal(p.persisted.plugin.openNotice, null)
   assert.deepEqual(p.refusals, [])
 })
+
+// -- Card actions (v0.1.5) ------------------------------------------------------------------------
+
+
+type ActionHost = { opened: unknown[]; copies: string[]; reads: string[]; snapshots: number }
+
+/** The panel with board.copy answering `copyResult` and board.markRead recorded. */
+async function withActions(
+  view = 'list',
+  filters: Record<string, boolean> = withChildren,
+  snapshot = snapshotFixture(),
+  copyResult: { ok: true; tool: string } | { ok: false; error: string } = { ok: true, tool: 'wl-copy' }
+): Promise<{ p: TestPanel; h: ActionHost }> {
+  const h: ActionHost = { opened: [], copies: [], reads: [], snapshots: 0 }
+  const host = mockHost({
+    requests: {
+      'board.snapshot': () => {
+        h.snapshots++
+        return snapshot
+      },
+      'board.open': (input) => {
+        h.opened.push(input)
+        return { ok: true, how: 'workspace.open' }
+      },
+      'board.copy': (input) => {
+        h.copies.push(input.text)
+        return copyResult
+      },
+      'board.markRead': (input) => {
+        h.reads.push(input.workspaceId)
+        return { ok: true }
+      }
+    }
+  })
+  panel = await mount(panelModule, { host, persisted: { plugin: { view, filters } } })
+  return { p: panel, h }
+}
+
+/** The ⋯ button of the card titled `title` (cards and their ⋯ buttons draw in the same order). */
+function actionsButton(p: TestPanel, title: string) {
+  const i = cardTitles(p).indexOf(title)
+  assert.ok(i >= 0, `card ${title}`)
+  const b = p.findAll({ type: 'IconButton', label: 'Actions' })[i]
+  assert.ok(b, `⋯ of ${title}`)
+  return b
+}
+
+const ACTION_LABELS = ['Copy Orca session id', 'Mark workspace as read', 'Copy workspace path']
+const shownActions = (p: TestPanel) => ACTION_LABELS.filter((l) => p.find({ type: 'Button', text: l }))
+
+test('⋯ on every card toggles its actions row, one card at a time, and never opens the agent', async () => {
+  const { p, h } = await withActions()
+  assert.equal(p.findAll({ type: 'IconButton', label: 'Actions' }).length, cardTitles(p).length)
+  assert.deepEqual(shownActions(p), [])
+  await p.press(actionsButton(p, 'Rotate the signing keys'))
+  assert.deepEqual(shownActions(p), ['Copy Orca session id', 'Copy workspace path'])
+  assert.deepEqual(h.opened, [], 'the ⋯ button does not open the agent')
+  // Another card's ⋯ moves the row there.
+  await p.press(actionsButton(p, 'Receipt email template'))
+  assert.equal(p.findAll({ type: 'Button', text: 'Copy workspace path' }).length, 1)
+  assert.ok(p.find({ type: 'Button', text: 'Mark workspace as read' }))
+  // Pressing it again hides it.
+  await p.press(actionsButton(p, 'Receipt email template'))
+  assert.deepEqual(shownActions(p), [])
+  assert.deepEqual(h.opened, [])
+  // Not persisted: nothing about it is stored.
+  assert.deepEqual(Object.keys(p.persisted.plugin).filter((k) => /action/i.test(k)), [])
+  assert.deepEqual(p.errors, [])
+  assert.deepEqual(p.warnings, [])
+  assert.deepEqual(p.refusals, [])
+})
+
+test('⋯ works in Projects and Tree too', async () => {
+  for (const view of ['projects', 'tree']) {
+    const { p, h } = await withActions(view, allOff)
+    // Workspace rows are Lists too here: narrow the board to one card first.
+    await p.type({ label: 'Search' }, 'revoke')
+    const buttons = p.findAll({ type: 'IconButton', label: 'Actions' })
+    assert.equal(buttons.length, 1, view)
+    await p.press(buttons[0] as NonNullable<(typeof buttons)[0]>)
+    assert.ok(p.find({ type: 'Button', text: 'Copy Orca session id' }), view)
+    assert.deepEqual(h.opened, [], view)
+    assert.deepEqual(p.warnings, [], view)
+    await p.unmount()
+    panel = undefined
+  }
+})
+
+test('Copy Orca session id copies exactly orca_session_id:<id> and confirms inline', async () => {
+  const { p, h } = await withActions()
+  await p.press(actionsButton(p, 'Rotate the signing keys'))
+  await p.press({ type: 'Button', text: 'Copy Orca session id' })
+  assert.deepEqual(h.copies, ['orca_session_id:s-keys'])
+  assert.ok(p.find({ type: 'Text', text: 'Copied orca_session_id:s-keys' }))
+  assert.deepEqual(h.opened, [])
+})
+
+test('an id that already has the prefix is not prefixed twice', async () => {
+  const snap = snapshotFixture()
+  for (const w of snap.workspaces) for (const a of w.agents) if (a.orcaSessionId) a.orcaSessionId = `orca_session_id:${a.orcaSessionId}`
+  const { p, h } = await withActions('list', withChildren, snap)
+  await p.press(actionsButton(p, 'Rotate the signing keys'))
+  await p.press({ type: 'Button', text: 'Copy Orca session id' })
+  assert.deepEqual(h.copies, ['orca_session_id:s-keys'])
+})
+
+test('no Orca session id yet: the copy button is disabled and says why', async () => {
+  const { p, h } = await withActions()
+  // A terminal agent that has not reported to Orca.
+  await p.press(actionsButton(p, 'Receipt email template'))
+  const b = p.find({ type: 'Button', text: 'Copy Orca session id' })
+  assert.equal((b?.props as { disabled?: boolean }).disabled, true)
+  assert.equal((b?.props as { tooltip?: string }).tooltip, 'This agent has no Orca session id yet')
+  assert.ok(p.find({ type: 'Text', text: 'This agent has no Orca session id yet.' }))
+  assert.deepEqual(h.copies, [])
+})
+
+test('no clipboard tool: the text shows in a Code element to copy by hand, with the reason', async () => {
+  const { p } = await withActions('list', withChildren, snapshotFixture(), { ok: false, error: 'no clipboard tool on this computer (looked for wl-copy, xclip, xsel)' })
+  await p.press(actionsButton(p, 'Rotate the signing keys'))
+  await p.press({ type: 'Button', text: 'Copy Orca session id' })
+  assert.ok(p.find({ type: 'Code', text: 'orca_session_id:s-keys' }))
+  assert.ok(p.find({ type: 'Text', text: /Could not copy the Orca session id \(no clipboard tool on this computer .*\)\. Select it here and copy it:/ }))
+  assert.equal(p.find({ type: 'Text', text: /^Copied/ }), null)
+  assert.deepEqual(p.errors, [])
+  assert.deepEqual(p.warnings, [])
+})
+
+test('Mark workspace as read: on unread cards only, sends the workspace, then refreshes the board', async () => {
+  const { p, h } = await withActions()
+  await p.press(actionsButton(p, 'Receipt email template'))
+  const b = p.find({ type: 'Button', text: 'Mark workspace as read' })
+  assert.match(String((b?.props as { tooltip?: string }).tooltip), /^Orca keeps read state per workspace: marks .*receipt-email read/)
+  const before = h.snapshots
+  await p.press({ type: 'Button', text: 'Mark workspace as read' })
+  assert.deepEqual(h.reads, ['Build server|repo-b-shop::/srv/work/workspaces/receipt-email'])
+  assert.ok(h.snapshots > before, 'the board refreshed')
+  assert.ok(p.find({ type: 'Text', text: /^Marked .*receipt-email read$/ }))
+  assert.deepEqual(h.opened, [])
+  // Not offered on a card that is neither unread nor in an unread workspace…
+  await p.press(actionsButton(p, 'Rotate the signing keys'))
+  assert.equal(p.find({ type: 'Button', text: 'Mark workspace as read' }), null)
+  // …nor on a floating workspace chat.
+  await p.press(actionsButton(p, 'Quick question about regex'))
+  assert.equal(p.find({ type: 'Button', text: 'Mark workspace as read' }), null)
+})
+
+test('Copy workspace path copies the folder on its machine; not for floating chats', async () => {
+  const { p, h } = await withActions()
+  await p.press(actionsButton(p, 'Receipt email template'))
+  const b = p.find({ type: 'Button', text: 'Copy workspace path' })
+  assert.equal((b?.props as { tooltip?: string }).tooltip, 'The folder on Build server: /srv/work/workspaces/receipt-email')
+  await p.press({ type: 'Button', text: 'Copy workspace path' })
+  assert.deepEqual(h.copies, ['/srv/work/workspaces/receipt-email'])
+  assert.ok(p.find({ type: 'Text', text: 'Copied /srv/work/workspaces/receipt-email' }))
+  await p.press(actionsButton(p, 'Quick question about regex'))
+  assert.deepEqual(shownActions(p), ['Copy Orca session id'])
+  await p.press({ type: 'Button', text: 'Copy Orca session id' })
+  assert.deepEqual(h.copies.at(-1), 'orca_session_id:s-float')
+})

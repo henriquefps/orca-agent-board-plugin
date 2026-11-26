@@ -7,6 +7,11 @@ export type BoardAgent = {
   /** Unique on the board: `<workspace id>|<session or pane>`. */
   id: string
   sessionId: string | null
+  /**
+   * Orca's own session id (`orcaSessionId` in `worktree ps`, `agent show`), as Orca gives it (no
+   * `orca_session_id:` prefix so far); null until a terminal agent reports to Orca, and in host API mode.
+   */
+  orcaSessionId: string | null
   paneKey: string | null
   /** CLI terminal handle (`term_…`) or host API terminal id, when the agent runs in a terminal. */
   terminal: string | null
@@ -458,3 +463,29 @@ export const elementsTooltip = (hidden: HiddenElements): string => {
   const n = hiddenCount(hidden)
   return n ? `Card elements (${n} hidden)` : 'Card elements'
 }
+
+// ---------------------------------------------------------------------------------------------
+// Card actions (the ⋯ button): copy the Orca session id, mark the workspace read, copy its path.
+
+export const ORCA_SESSION_PREFIX = 'orca_session_id:'
+export const NO_ORCA_SESSION = 'This agent has no Orca session id yet'
+
+/** `orca_session_id:<id>`, never with the prefix twice; null when the agent has none. */
+export function orcaSessionRef(a: Pick<BoardAgent, 'orcaSessionId'>): string | null {
+  const id = a.orcaSessionId?.trim()
+  if (!id) return null
+  return id.startsWith(ORCA_SESSION_PREFIX) ? id : `${ORCA_SESSION_PREFIX}${id}`
+}
+
+/**
+ * Mark as read: the card is unread or its workspace is, and the CLI can address the workspace
+ * (Orca keeps read state per workspace; floating chats have no selector).
+ */
+export const canMarkRead = (a: BoardAgent, w: BoardWorkspace): boolean =>
+  !w.floating && !!w.selector && (w.unread || cardStatus(a, w).status === 'unread')
+
+export const canCopyPath = (w: BoardWorkspace): boolean => !w.floating && !!w.path
+
+export const markReadTooltip = (where: string): string =>
+  `Orca keeps read state per workspace: marks ${where} read, with every agent in it`
+export const copyPathTooltip = (w: BoardWorkspace): string => `The folder on ${w.host}: ${w.path}`

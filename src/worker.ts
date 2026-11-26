@@ -1,6 +1,7 @@
 // Agent Board's worker: builds the board from Orca (the Orca CLI where it is available, the
 // plugin host API otherwise), answers the panel, opens workspaces and keeps the status bar item.
 import type { OrcaWorkerApi } from 'orca/worker'
+import { writeClipboard, type CopyAnswer } from './clipboard.ts'
 import { cliRunner, floatingReader, resolveCli, type CliAnswer, type CliRunner, type FloatingReader } from './cli.ts'
 import {
   needsMeCount,
@@ -16,7 +17,7 @@ import {
   type BoardSnapshot,
   type BoardWorkspace
 } from './model.ts'
-import type { OpenResult } from './protocol.ts'
+import type { CopyResult, MarkReadResult, OpenResult } from './protocol.ts'
 import {
   createdHandle,
   floatingWorkspace,
@@ -50,6 +51,8 @@ const HOST_AGENT_CALLS = 60
 export const deps: {
   cli?: CliRunner | null
   floating?: FloatingReader | null
+  /** The clipboard writer (`writeClipboard`); tests swap in a fake. */
+  copy?: (text: string) => Promise<CopyAnswer>
   now?: () => number
   debounceMs?: number
 } = {}
@@ -431,6 +434,32 @@ export default function activate(orca: OrcaWorkerApi): void {
       how: 'none',
       error: error ?? (remote ? noticeRemoteNeedsCli(w.host) : 'Orca cannot open this workspace from a plugin.')
     }
+  })
+
+  // -- Card actions ------------------------------------------------------------------------------
+
+  /** At most this much text goes to the clipboard: an id or a path, never a transcript. */
+  const COPY_MAX = 4096
+  orca.panels.handle('board.copy', async (input): Promise<CopyResult> => {
+    const text = typeof input?.text === 'string' ? input.text : ''
+    if (!text || text.length > COPY_MAX) return { ok: false, error: 'nothing to copy' }
+    try {
+      return await (deps.copy ?? writeClipboard)(text)
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  // Orca keeps read state per workspace: `worktree set --read` clears the workspace's unread dot
+  // on whichever host it lives (`--environment`). The panel refreshes the board after.
+  orca.panels.handle('board.markRead', async ({ workspaceId }): Promise<MarkReadResult> => {
+    const s = snap ?? (await refresh())
+    const w = s.workspaces.find((x) => x.id === workspaceId)
+    if (!w) return { ok: false, error: 'This workspace is gone; refresh the board.' }
+    if (w.floating || !w.selector) return { ok: false, error: 'Orca cannot mark this workspace read from the board.' }
+    if (!cli) return { ok: false, error: 'Marking a workspace read needs the Orca CLI.' }
+    const r = await cli(['worktree', 'set', '--environment', w.env, '--worktree', w.selector, '--read'])
+    return r.error ? { ok: false, error: r.error } : { ok: true }
   })
 
   // -- Status bar: pressing the item shows the panel ---------------------------------------------

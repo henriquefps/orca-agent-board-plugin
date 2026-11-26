@@ -6,6 +6,7 @@ import {
   Box,
   Button,
   Callout,
+  Code,
   Collapsible,
   EmptyState,
   Grid,
@@ -37,7 +38,10 @@ import {
 } from 'orca'
 import {
   AGENT_FILTERS,
+  canCopyPath,
+  canMarkRead,
   CARD_ELEMENTS,
+  copyPathTooltip,
   cardStatus,
   cardEmphasis,
   childSummary,
@@ -48,6 +52,9 @@ import {
   hiddenCount,
   isLatest,
   listItems,
+  markReadTooltip,
+  NO_ORCA_SESSION,
+  orcaSessionRef,
   parentLineText,
   parentRef,
   projectGroups,
@@ -99,6 +106,22 @@ const closedGroups = atom<Record<string, boolean>>('closedGroups', {}, { persist
 const hiddenElements = atom<HiddenElements>('hiddenElements', {}, { persist: 'plugin' })
 /** Whether the Card elements section under the header is open. */
 const elementsOpen = atom('elementsOpen', false, { persist: 'plugin' })
+
+// The ⋯ actions of one card at a time, by board agent id. Not persisted: a reload closes them.
+const actionsFor = atom<string | null>(null)
+/** What the last card action said, shown in that card's actions row. */
+export type ActionFeedback = {
+  agentId: string
+  tone: 'success' | 'warning' | 'danger'
+  text: string
+  /** The text a failed copy could not put on the clipboard, to select by hand. */
+  manual?: string
+}
+const feedback = atom<ActionFeedback | null>(null)
+const markingRead = atom<string | null>(null)
+/** How long "Copied …" stays. */
+export const COPIED_MS = 4_000
+let feedbackTimer: ReturnType<typeof setTimeout> | null = null
 
 /** What the panel says when the floating workspace is closed (plugins cannot open it). */
 export const FLOATING_CLOSED =
@@ -182,7 +205,53 @@ async function open(workspaceId: string, agentId?: string, label?: string): Prom
   }
 }
 
+function say(f: ActionFeedback | null, clearAfterMs = 0): void {
+  if (feedbackTimer) clearTimeout(feedbackTimer)
+  feedbackTimer = null
+  set(feedback, f)
+  if (f && clearAfterMs) {
+    feedbackTimer = setTimeout(() => {
+      feedbackTimer = null
+      if (read(feedback) === f) set(feedback, null)
+    }, clearAfterMs)
+  }
+}
+
+function toggleActions(agentId: string): void {
+  const next = read(actionsFor) === agentId ? null : agentId
+  set(actionsFor, next)
+  if (read(feedback)?.agentId !== next) say(null)
+}
+
+async function copy(agentId: string, text: string, what: string): Promise<void> {
+  try {
+    const r = await plugin.request('board.copy', { text })
+    if (r.ok) return say({ agentId, tone: 'success', text: `Copied ${text}` }, COPIED_MS)
+    say({ agentId, tone: 'warning', text: `Could not copy the ${what} (${r.error}). Select it here and copy it:`, manual: text })
+  } catch (e) {
+    say({ agentId, tone: 'warning', text: `Could not copy the ${what} (${(e as Error).message}). Select it here and copy it:`, manual: text })
+  }
+}
+
+async function markRead(agentId: string, workspaceId: string, where: string): Promise<void> {
+  set(markingRead, agentId)
+  try {
+    const r = await plugin.request('board.markRead', { workspaceId })
+    if (!r.ok) return say({ agentId, tone: 'danger', text: `Could not mark ${where} read: ${r.error ?? 'unknown error'}` })
+    say({ agentId, tone: 'success', text: `Marked ${where} read` }, COPIED_MS)
+    await load(true)
+  } catch (e) {
+    say({ agentId, tone: 'danger', text: `Could not mark ${where} read: ${(e as Error).message}` })
+  } finally {
+    set(markingRead, null)
+  }
+}
+
 export function setup(ctx: PanelContext): void {
+  ctx.signal.addEventListener('abort', () => {
+    if (feedbackTimer) clearTimeout(feedbackTimer)
+    feedbackTimer = null
+  })
   ctx.subscriptions.push(plugin.on('board.changed', () => void load()))
   ctx.subscriptions.push(
     settings.onDidChange(({ key }) => {
@@ -266,6 +335,47 @@ function metaText(a: BoardAgent, hidden: HiddenElements): OrcaNode {
   return <Text size="xs" muted>{parts.flatMap((p, i) => (i ? [' · ', p] : [p]))}</Text>
 }
 
+/** The ⋯ row at the bottom of a card: copy the Orca session id, mark the workspace read, copy its path. */
+function CardActions({ a, w, where }: { a: BoardAgent; w: VisibleWorkspace; where: string }): OrcaNode {
+  const ref = orcaSessionRef(a)
+  const f = read(feedback)
+  const mine = f?.agentId === a.id ? f : null
+  const busy = read(markingRead) === a.id
+  return (
+    <Box paddingX="sm" paddingY="xs" gap="xs">
+      <Row gap="xs" wrap align="center">
+        <Button
+          size="xs"
+          variant="outline"
+          icon="copy"
+          tooltip={ref ? `Copies ${ref}` : NO_ORCA_SESSION}
+          disabled={!ref}
+          onPress={() => (ref ? copy(a.id, ref, 'Orca session id') : undefined)}
+        >
+          Copy Orca session id
+        </Button>
+        {canMarkRead(a, w) ? (
+          <Button size="xs" variant="outline" icon="check" tooltip={markReadTooltip(where)} disabled={busy} onPress={() => markRead(a.id, w.id, where)}>
+            {busy ? 'Marking read…' : 'Mark workspace as read'}
+          </Button>
+        ) : null}
+        {canCopyPath(w) ? (
+          <Button size="xs" variant="outline" icon="folder" tooltip={copyPathTooltip(w)} onPress={() => copy(a.id, w.path, 'workspace path')}>
+            Copy workspace path
+          </Button>
+        ) : null}
+      </Row>
+      {ref ? null : <Text size="xs" muted>{`${NO_ORCA_SESSION}.`}</Text>}
+      {mine ? (
+        <Stack gap="xs">
+          <Text size="xs" tone={mine.tone} truncate={!mine.manual}>{mine.text}</Text>
+          {mine.manual ? <Code block>{mine.manual}</Code> : null}
+        </Stack>
+      ) : null}
+    </Box>
+  )
+}
+
 function AgentCard({ snap, fam, a, w }: { snap: BoardSnapshot; fam: Family; a: BoardAgent; w: VisibleWorkspace }): OrcaNode {
   const hidden = read(hiddenElements)
   const on = (key: CardElement) => shows(hidden, key)
@@ -285,6 +395,7 @@ function AgentCard({ snap, fam, a, w }: { snap: BoardSnapshot; fam: Family; a: B
   // Called, not drawn as <MetaText />, so an all-hidden meta text is null and the row collapses.
   const meta = metaText(a, hidden)
   const metaRow = status || (children && childSummary(fam, w).count) || meta
+  const actionsOpen = read(actionsFor) === a.id
   return (
     <Box key={a.id} direction="row" align="stretch" gap="xs" border={look.border} background={look.background} radius="md">
       {look.bar ? <Box width={BAR_WIDTH} shrink={false} border={look.bar} background={look.bar} radius="full" /> : null}
@@ -326,7 +437,19 @@ function AgentCard({ snap, fam, a, w }: { snap: BoardSnapshot; fam: Family; a: B
               </ListItem>
             </List>
           </Box>
+          {/* Outside the ListItem too: it shows the card's actions and never opens the agent. */}
+          <Box shrink={false} paddingX="xs" paddingY="xs">
+            <IconButton
+              icon="more"
+              label="Actions"
+              tooltip="Actions"
+              variant={actionsOpen ? 'solid' : 'ghost'}
+              size="xs"
+              onPress={() => toggleActions(a.id)}
+            />
+          </Box>
         </Box>
+        {actionsOpen ? <CardActions a={a} w={w} where={where} /> : null}
       </Box>
     </Box>
   )
