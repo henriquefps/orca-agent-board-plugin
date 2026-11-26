@@ -1,0 +1,109 @@
+{
+  "manifestVersion": 2,
+  "id": "agent-board",
+  "name": "Agent Board",
+  "version": "0.1.0",
+  "description": "Your coding agents across every machine Orca reaches, in one sidebar list: what needs you first, parents and their children, one project per Git remote.",
+  "author": {
+    "name": "Henrique Silva",
+    "url": "https://github.com/henriquefps"
+  },
+  "repository": "https://github.com/henriquefps/orca-agent-board-plugin",
+  "license": "MIT",
+  "engines": {
+    "orca": ">=1.4.259"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "capabilities": [
+    {
+      "kind": "workspace:read"
+    },
+    {
+      "kind": "agent:read"
+    },
+    {
+      "kind": "workspace:write"
+    },
+    {
+      "kind": "settings:own"
+    }
+  ],
+  "contributes": {
+    "panels": [
+      {
+        "id": "agent-board",
+        "title": "Agent Board",
+        "icon": "agent",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      }
+    ],
+    "commands": [
+      {
+        "id": "show",
+        "title": "Agent Board: Show"
+      }
+    ],
+    "statusBarItems": [
+      {
+        "id": "needs-you",
+        "text": "0 need you",
+        "icon": "bell",
+        "tone": "warning",
+        "tooltip": "Agent Board: agents that need you",
+        "command": "show"
+      }
+    ],
+    "events": [
+      {
+        "on": "agent.status.changed"
+      },
+      {
+        "on": "workspace.changed"
+      },
+      {
+        "on": "workspace.created"
+      },
+      {
+        "on": "workspace.removed"
+      }
+    ],
+    "settings": [
+      {
+        "key": "defaultView",
+        "title": "Default view",
+        "description": "The view a new Agent Board panel opens with.",
+        "type": "string",
+        "default": "list",
+        "enum": [
+          "list",
+          "projects",
+          "tree"
+        ],
+        "enumLabels": [
+          "List",
+          "Projects",
+          "Tree"
+        ]
+      },
+      {
+        "key": "pollSeconds",
+        "title": "Refresh every (seconds)",
+        "description": "How often an open panel re-reads Orca, on top of live agent and workspace events. Nothing polls while no panel is open, except the status bar count, once a minute.",
+        "type": "integer",
+        "default": 15,
+        "minimum": 5,
+        "maximum": 600
+      },
+      {
+        "key": "floatingChats",
+        "title": "Include floating workspace chats",
+        "description": "Lists this computer's floating workspace chats. Orca does not list them yet, so the board reads their ids from Orca's local session store (read-only, needs the sqlite3 command).",
+        "type": "boolean",
+        "default": true
+      }
+    ]
+  }
+}
