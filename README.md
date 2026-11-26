@@ -12,6 +12,9 @@ work back. The built-in sidebar shows workspaces; Agent Board shows **agents**:
 - **One project per repository.** Clones of the same Git remote on different machines are one project.
 - **What needs you first.** Needs you, failed, running and unread each have their own icon, colour and
   label; finished and seen agents fade back.
+- **A colour per machine.** Every host name starts with a coloured dot (🔵 🟢 🟣 🟠 🔴 🟡 🟤 ⚪); press a
+  host chip to change that machine's colour.
+- **Everything opens here.** Agents on other machines open in this computer's Orca window.
 - **Three views:** List (agents by last activity), Projects (grouped by repository, children nested under
   their parent) and Tree (the full parent/child chain across hosts and projects).
 
@@ -63,33 +66,46 @@ collapsed groups) is kept by Orca for the plugin and needs no `storage:own`.
 
 ## Features
 
-- **Header:** "updated Xs ago", the host filter (All hosts or one host) and Refresh.
+- **Header:** "updated Xs ago", the host filter (All hosts or one host, each with its colour) and Refresh.
 - **Views:** List (default), Projects and Tree, and search over titles, projects, workspaces and messages.
 - **Filters**, matched per agent, not per workspace: **Needs me** (waiting, blocked or unread, or the most
   recent chat of a workspace whose child waits), **Running**, **Unread**, **Hide children** (List only, on
   by default) and **Hide idle** (workspaces without an open agent; on by default). Chip counts count agents.
-- **Agent cards:** project/workspace and host first; then the status icon (an animated spinner while
-  running) beside the title; "Agent: <last reply>"; then the status, the children summary (on the
-  workspace's most recent chat only: how many descendant workspaces, and how many of them need you,
-  failed, are running or unread, each in its tone), agent kind, relative time and subagents.
+- **Agent cards:** project/workspace and host chips first; for a child workspace, a muted line
+  `⑂ child of <project>/<workspace>`, the parent's host (only when it is another machine) and
+  `· <the parent's most recent chat>`, which opens the parent when pressed; then the status icon (an
+  animated spinner while running) beside the title, the card's only status icon; "Agent: <last reply>";
+  then the status badge (text only), the children summary (on the workspace's most recent chat only: how
+  many descendant workspaces, and how many of them need you, failed, are running or unread, each in its
+  tone), agent kind, relative time and subagents. The parent line shows in every view.
+- **Host colours:** each host chip starts with a coloured circle, by the host's place in the host list
+  (this computer 🔵, then 🟢 🟣 🟠 🔴 🟡 🟤 ⚪). Pressing a chip gives that machine the next colour; the
+  choice is remembered by host name and used on cards, workspace rows, project groups, the host filter
+  and parent lines. The chip is a small outline button; the rest of the card still opens the agent.
 - **One status per card**, most urgent first, with the prototype's signals (left bar, card surface, icon,
   title weight, badge), all in Orca's theme tones:
   - needs you: warning bar, tinted and outlined card, warning icon, semibold title, warning badge. The
     most recent chat of a workspace whose child needs you looks the same.
   - failed or interrupted: danger bar and outline, error icon, semibold, danger badge.
-  - running: accent bar, spinner, semibold, accent badge with a spinner.
+  - running: accent bar, spinner beside the title, semibold, accent badge.
   - unread: amber (warning) bar like Orca's bell, bell icon, semibold, warning badge.
   - done: no bar, a neutral check, regular title, muted reply, the word "done" as quiet text.
 - **Projects:** one collapsible group per Git remote across hosts. A display name you set in Orca (one
   that differs from the folder name) wins on any host, else this computer's. Children nest under their
   parent; a child whose parent is in another project says "child of …".
 - **Tree:** the whole parent/child chain across hosts and projects.
-- **Click** an agent or workspace to show it in Orca: `workspace.open` for workspaces on this computer
-  (`terminal.focus` first for a terminal agent), `orca worktree activate` (then `terminal switch`) for
-  other Orca servers, and the floating workspace for its chats.
+- **Click** an agent or workspace to show it in **this computer's** Orca window, on any host:
+  `workspace.open` (`terminal.focus` first for a terminal agent). A paired server's workspace is found in
+  `workspace.list` by its `runtime:<environment id>` host; a terminal agent there that the host API does
+  not list is shown with `orca terminal switch`. The board never runs `worktree activate` for another
+  machine (that opens the other machine's window); when nothing can show it, the panel says so.
+- **Floating workspace:** a click on one of its chats maximizes it. When it is closed, Orca does not let
+  plugins open it, so the panel says: "The floating workspace is closed. Press ⌘⌥A (Ctrl+Alt+A on
+  Windows/Linux) to open it, then click the chat again." (dismissible).
 - **Status bar:** "N need you", hidden at zero: the List's **Needs me** chip with the default filters, on
   every host (children count once, through their parent's summary). Pressing it shows the panel.
-- View, filters, host filter and collapsed groups are remembered.
+- View, filters, host filter, host colours, collapsed groups and the last open failure (until dismissed)
+  are remembered.
 
 ## Settings
 
@@ -125,10 +141,13 @@ minutes). [docs/orca-data-sources.md](docs/orca-data-sources.md) lists what each
   them, so the worker reads their ids from Orca's local session store (`agent-session-domain.db` in Orca's
   user data folder, read-only, with the `sqlite3` command) and asks `orca agent show` for each. Without
   `sqlite3` or the file, the floating workspace is left out silently. Clicking one shows the floating
-  workspace.
+  workspace if it is open; plugins cannot open it, so when it is closed the panel tells you its shortcut.
+- **Other machines' chats without a `workspace.list` row:** a workspace Orca does not list for plugins
+  cannot be shown in this window; if it has a terminal the board switches to that, else the panel says
+  it cannot be shown here.
 - **Needs the Orca CLI:** parent and child workspaces, other Orca servers, one project per Git remote,
   display names from other hosts, linked PRs, last replies, per-agent unread and failed/interrupted
-  outcomes, and opening workspaces on other Orca servers.
+  outcomes, and showing terminal agents of other Orca servers that the host API does not list.
 - Pressing the status bar item shows the panel through `orca plugin open`; if that fails it toggles the
   right sidebar.
 - The panel draws at most 60 agent cards at a time; **Show more** adds 60 more.

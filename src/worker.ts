@@ -2,7 +2,7 @@
 // plugin host API otherwise), answers the panel, opens workspaces and keeps the status bar item.
 import type { OrcaWorkerApi } from 'orca/worker'
 import { cliRunner, floatingReader, resolveCli, type CliRunner, type FloatingReader } from './cli.ts'
-import { needsMeCount, NOTICE_NO_CLI, noticeCliFailed, type BoardSnapshot, type BoardWorkspace } from './model.ts'
+import { needsMeCount, NOTICE_NO_CLI, noticeCliFailed, type BoardAgent, type BoardSnapshot, type BoardWorkspace } from './model.ts'
 import type { OpenResult } from './protocol.ts'
 import {
   floatingWorkspace,
@@ -252,33 +252,44 @@ export default function activate(orca: OrcaWorkerApi): void {
   })
 
   // -- Opening -----------------------------------------------------------------------------------
+  // Everything opens in THIS computer's Orca window. `workspace.list` lists every host's
+  // workspaces, a paired server's with `hostId` = `runtime:<environment id>`, so `workspace.open`
+  // and `terminal.focus` show them here. `worktree activate --environment <server>` would open the
+  // server's own window instead: the board never uses it for another host.
 
   let wsListCache: { at: number; rows: HostWorkspaceRow[] } | null = null
-  async function hostRows(): Promise<HostWorkspaceRow[]> {
-    if (wsListCache && now() - wsListCache.at < 30_000) return wsListCache.rows
+  async function hostRows(fresh = false): Promise<HostWorkspaceRow[]> {
+    if (wsListCache && now() - wsListCache.at < (fresh ? 2_000 : 30_000)) return wsListCache.rows
     const wl = await orca.host.call('workspace.list', {})
     wsListCache = { at: now(), rows: wl.workspaces as HostWorkspaceRow[] }
     return wsListCache.rows
   }
 
-  /** The `workspace.list` id of a workspace on this computer (by id, else by path). */
-  async function hostIdOf(w: BoardWorkspace): Promise<string | null> {
-    if (w.env !== 'local' || w.floating) return null
-    try {
-      const rows = await hostRows()
-      const hit =
-        rows.find((r) => r.id === w.hostWorkspaceId) ??
-        rows.find((r) => r.path === w.path && (!r.hostId || r.hostId === 'local'))
+  /**
+   * The `workspace.list` id of a board workspace: the row on the same host (`local`, or
+   * `runtime:<environment id>` for a paired server) with the same id, else the same path.
+   */
+  async function hostRowOf(s: BoardSnapshot, w: BoardWorkspace): Promise<string | null> {
+    if (w.floating) return null
+    if (s.source === 'host') return w.hostWorkspaceId
+    if (!w.hostId) return null
+    const local = w.hostId === 'local'
+    const find = (all: HostWorkspaceRow[]): string | null => {
+      const rows = all.filter((r) => (local ? !r.hostId || r.hostId === 'local' : r.hostId === w.hostId))
+      const hit = rows.find((r) => r.id === w.hostWorkspaceId) ?? rows.find((r) => !!w.path && r.path === w.path)
       return hit?.id ?? null
+    }
+    try {
+      // A workspace made since the last read: ask Orca again once.
+      return find(await hostRows()) ?? find(await hostRows(true))
     } catch {
       return null
     }
   }
 
-  async function terminalIdOf(w: BoardWorkspace, hostWs: string, agentId: string | undefined): Promise<string | null> {
-    const a = w.agents.find((x) => x.id === agentId)
+  async function terminalIdOf(s: BoardSnapshot, a: BoardAgent | undefined, hostWs: string): Promise<string | null> {
     if (!a || a.kind !== 'terminal') return null
-    if (snap?.source === 'host' && a.terminal) return a.terminal
+    if (s.source === 'host' && a.terminal) return a.terminal
     if (a.paneKey && terminalByPane.has(a.paneKey)) return terminalByPane.get(a.paneKey) ?? null
     try {
       const { agents } = await orca.host.call('agents.list', { workspaceId: hostWs })
@@ -292,30 +303,36 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
   }
 
-  async function openWithCli(run: CliRunner, w: BoardWorkspace, agentId: string | undefined): Promise<OpenResult> {
-    if (!w.selector) return { ok: false, how: 'none', error: 'Orca cannot open this workspace from a plugin' }
-    const a = w.agents.find((x) => x.id === agentId)
-    let r = await run(['worktree', 'activate', '--environment', w.env, '--worktree', w.selector])
-    let how = 'worktree activate'
-    if (!r.error && a?.terminal) {
-      await run(['terminal', 'switch', '--environment', w.env, '--terminal', a.terminal])
-      how = 'worktree activate + terminal switch'
-    }
-    if (r.error) {
-      // Fallback: bring one of the workspace's live terminals forward.
+  /** A terminal of the workspace (the agent's own when it has one), shown in this window by the CLI. */
+  async function switchTerminal(run: CliRunner, w: BoardWorkspace, a: BoardAgent | undefined): Promise<OpenResult | null> {
+    if (!w.selector) return null
+    let handle = a?.terminal ?? null
+    if (!handle) {
       const list = await run(['terminal', 'list', '--environment', w.env, '--worktree', w.selector])
       const terms = ((list.result as { terminals?: { handle?: string; connected?: boolean; agentIdentity?: unknown }[] })?.terminals ?? [])
         .filter((t) => t.connected !== false && t.handle)
-      const pick = (a?.terminal && terms.find((t) => t.handle === a.terminal)) || terms.find((t) => t.agentIdentity) || terms[0]
-      if (pick?.handle) {
-        r = await run(['terminal', 'switch', '--environment', w.env, '--terminal', pick.handle])
-        how = 'terminal switch'
-      }
+      handle = (terms.find((t) => t.agentIdentity) ?? terms[0])?.handle ?? null
     }
-    return r.error ? { ok: false, how, error: r.error } : { ok: true, how }
+    if (!handle) return null
+    const r = await run(['terminal', 'switch', '--environment', w.env, '--terminal', handle])
+    return r.error ? { ok: false, how: 'terminal switch', error: r.error } : { ok: true, how: 'terminal switch' }
   }
 
-  orca.panels.handle('board.open', async ({ workspaceId, agentId }) => {
+  /** This computer's workspace through the CLI: `worktree activate`, then the agent's terminal. */
+  async function activateLocal(run: CliRunner, w: BoardWorkspace, a: BoardAgent | undefined): Promise<OpenResult> {
+    if (!w.selector) return { ok: false, how: 'none', error: 'Orca cannot open this workspace from a plugin' }
+    const r = await run(['worktree', 'activate', '--environment', w.env, '--worktree', w.selector])
+    if (!r.error) {
+      if (a?.terminal) {
+        await run(['terminal', 'switch', '--environment', w.env, '--terminal', a.terminal])
+        return { ok: true, how: 'worktree activate + terminal switch' }
+      }
+      return { ok: true, how: 'worktree activate' }
+    }
+    return (await switchTerminal(run, w, a)) ?? { ok: false, how: 'worktree activate', error: r.error }
+  }
+
+  orca.panels.handle('board.open', async ({ workspaceId, agentId }): Promise<OpenResult> => {
     const s = snap ?? (await refresh())
     const w = s.workspaces.find((x) => x.id === workspaceId)
     if (!w) return { ok: false, how: 'none', error: 'This workspace is gone; refresh the board.' }
@@ -324,25 +341,52 @@ export default function activate(orca: OrcaWorkerApi): void {
         await orca.host.call('commands.run', { action: 'floatingWorkspace.maximize' })
         return { ok: true, how: 'floating workspace' }
       } catch (e) {
-        return { ok: false, how: 'floating workspace', error: (e as Error).message }
+        // Orca refuses to maximize a floating workspace that is not open, and plugins cannot open it.
+        return { ok: false, how: 'floating workspace', error: (e as Error).message, code: 'floating-closed' }
       }
     }
-    const hostWs = await hostIdOf(w)
-    if (hostWs) {
-      try {
-        const term = await terminalIdOf(w, hostWs, agentId)
-        if (term) {
+    const a = w.agents.find((x) => x.id === agentId)
+    const remote = s.source === 'cli' ? w.env !== 'local' : !!w.hostId && w.hostId !== 'local'
+    const row = await hostRowOf(s, w)
+    let error: string | null = null
+
+    if (row) {
+      const term = await terminalIdOf(s, a, row)
+      if (term) {
+        try {
           const { focused } = await orca.host.call('terminal.focus', { terminalId: term })
           if (focused) return { ok: true, how: 'terminal.focus' }
+        } catch (e) {
+          error = (e as Error).message
         }
-        await orca.host.call('workspace.open', { workspaceId: hostWs })
-        return { ok: true, how: 'workspace.open' }
-      } catch (e) {
-        if (!cli) return { ok: false, how: 'workspace.open', error: (e as Error).message }
       }
     }
-    if (cli) return openWithCli(cli, w, agentId)
-    return { ok: false, how: 'none', error: 'Opening a workspace on another Orca server needs the Orca CLI.' }
+    // A terminal agent on another server: the CLI switches THIS window to its terminal.
+    if (remote && cli && a?.kind === 'terminal' && a.terminal) {
+      const r = await switchTerminal(cli, w, a)
+      if (r?.ok) return r
+      error = r?.error ?? error
+    }
+    if (row) {
+      try {
+        await orca.host.call('workspace.open', { workspaceId: row })
+        return { ok: true, how: 'workspace.open' }
+      } catch (e) {
+        error = (e as Error).message
+      }
+    }
+    if (cli && !remote) return activateLocal(cli, w, a)
+    if (cli && remote) {
+      // No workspace.list row for it: one of its terminals, if it has any, still shows here.
+      const r = await switchTerminal(cli, w, a)
+      if (r?.ok) return r
+      error = r?.error ?? error
+    }
+    return {
+      ok: false,
+      how: 'none',
+      error: error ?? (remote ? `Orca does not list this ${w.host} workspace for plugins, so it cannot be shown in this window.` : 'Orca cannot open this workspace from a plugin.')
+    }
   })
 
   // -- Status bar: pressing the item shows the panel ---------------------------------------------

@@ -6,6 +6,8 @@ export type OpenResult = {
   /** How it was shown: `workspace.open`, `terminal.focus`, `worktree activate`, … */
   how: string
   error?: string
+  /** `floating-closed`: the floating workspace is not open, and a plugin cannot open it. */
+  code?: 'floating-closed'
 }
 
 declare module 'orca' {

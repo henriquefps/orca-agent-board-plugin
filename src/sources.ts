@@ -31,17 +31,24 @@ const asState = (x: unknown): AgentState => (STATES.has(x as AgentState) ? (x as
 // ---------------------------------------------------------------------------------------------
 // CLI: `environment list`, `repo list --environment <env>`, `worktree ps --environment <env>`.
 
-export type CliHost = { env: string; label: string }
+/**
+ * `env` is the CLI's `--environment` name; `id` the paired environment's id, which the host API
+ * names as `runtime:<id>` in `workspace.list` rows (null for this computer).
+ */
+export type CliHost = { env: string; label: string; id?: string | null }
 
 /** This computer plus every paired Orca server. */
 export function hostsFromEnvironments(envList: unknown): CliHost[] {
-  const hosts: CliHost[] = [{ env: 'local', label: LOCAL_HOST }]
+  const hosts: CliHost[] = [{ env: 'local', label: LOCAL_HOST, id: null }]
   for (const e of arr(obj(envList).environments)) {
     const name = str(obj(e).name)
-    if (name && name !== 'local') hosts.push({ env: name, label: name })
+    if (name && name !== 'local') hosts.push({ env: name, label: name, id: str(obj(e).id) || null })
   }
   return hosts
 }
+
+/** The host API's `hostId` for a CLI host: `local`, or `runtime:<environment id>`. */
+export const hostIdOfCliHost = (h: CliHost): string | null => (h.env === 'local' ? 'local' : h.id ? `runtime:${h.id}` : null)
 
 export function reposFromCli(host: string, repoList: unknown): RepoRow[] {
   return arr(obj(repoList).repos).map((r0) => {
@@ -123,7 +130,8 @@ export function snapshotFromCli(data: readonly CliHostData[], extra: BoardWorksp
         host: h.label,
         env: str(address.environment) || h.env,
         selector: str(address.worktree) || `id:${worktreeId}`,
-        hostWorkspaceId: h.env === 'local' ? (identityKey ? `identity:${identityKey}` : worktreeId) : null,
+        hostWorkspaceId: identityKey ? `identity:${identityKey}` : worktreeId,
+        hostId: hostIdOfCliHost(h),
         project,
         repo,
         name: str(w.displayName) || repo,
@@ -225,6 +233,7 @@ export function floatingWorkspace(shows: readonly unknown[]): BoardWorkspace | n
     env: 'local',
     selector: null,
     hostWorkspaceId: null,
+    hostId: null,
     project: `${LOCAL_HOST}:floating`,
     repo: 'Floating',
     name: 'floating workspace',
@@ -312,6 +321,7 @@ export function snapshotFromHost(
       env: r.hostId ?? 'local',
       selector: null,
       hostWorkspaceId: r.id,
+      hostId: r.hostId ?? 'local',
       project,
       repo: r.project || (r.projectId && projectName.get(r.projectId)) || r.name,
       name: r.name,

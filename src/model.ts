@@ -33,8 +33,13 @@ export type BoardWorkspace = {
   env: string
   /** CLI `--worktree` selector; null when the CLI cannot address it (floating workspace). */
   selector: string | null
-  /** `workspace.list` id, when the host API knows this workspace. */
+  /**
+   * `workspace.list` id: the row's own id from the host API, or the id the CLI's worktree maps to
+   * (`identity:<identity key>`, else the worktree id). Null for the floating workspace.
+   */
   hostWorkspaceId: string | null
+  /** `workspace.list` `hostId` of this workspace's host: `local`, `runtime:<environment id>`, … */
+  hostId: string | null
   /** Project key: the Git remote's canonical key, else `<host>:<repo path or id>`. */
   project: string
   repo: string
@@ -352,4 +357,61 @@ export function projectNames(repos: readonly RepoRow[], localHost = LOCAL_HOST):
     }
   }
   return new Map([...best].map(([k, v]) => [k, v.name]))
+}
+
+// ---------------------------------------------------------------------------------------------
+// A colour per machine: a coloured circle emoji before every host name, so it works in any text.
+// Default by the host's place in the host list (this computer first); the person can cycle it.
+
+export const HOST_DOTS = ['🔵', '🟢', '🟣', '🟠', '🔴', '🟡', '🟤', '⚪'] as const
+
+/** Host name -> index in HOST_DOTS, for the hosts the person recoloured. */
+export type HostColors = Record<string, number>
+
+export function hostColorIndex(host: string, hosts: readonly string[], colors: HostColors = {}): number {
+  const chosen = colors[host]
+  const i = typeof chosen === 'number' && Number.isInteger(chosen) && chosen >= 0 ? chosen : Math.max(0, hosts.indexOf(host))
+  return i % HOST_DOTS.length
+}
+
+export const hostDot = (host: string, hosts: readonly string[], colors: HostColors = {}): string =>
+  HOST_DOTS[hostColorIndex(host, hosts, colors)] ?? HOST_DOTS[0]
+
+export const hostWithDot = (host: string, hosts: readonly string[], colors: HostColors = {}): string =>
+  `${hostDot(host, hosts, colors)} ${host}`
+
+/** The colours after pressing a host chip: that host moves to the next colour. */
+export function cycleHostColor(host: string, hosts: readonly string[], colors: HostColors = {}): HostColors {
+  return { ...colors, [host]: (hostColorIndex(host, hosts, colors) + 1) % HOST_DOTS.length }
+}
+
+// ---------------------------------------------------------------------------------------------
+// A child's card says whose child it is.
+
+export type ParentRef = {
+  parent: BoardWorkspace
+  /** `<project>/<workspace>` */
+  label: string
+  /** The parent's host, only when it differs from the child's. */
+  otherHost: string | null
+  /** Title (or prompt) of the parent's most recent chat. */
+  chat: string | null
+}
+
+export function parentRef(snap: BoardSnapshot, f: Family, w: BoardWorkspace): ParentRef | null {
+  const p = w.parentId ? f.byId.get(w.parentId) : undefined
+  if (!p) return null
+  const a = latestOf(p)
+  return {
+    parent: p,
+    label: wsLabel(snap, p),
+    otherHost: p.host !== w.host ? p.host : null,
+    chat: (a && (a.title || a.prompt)) || null
+  }
+}
+
+/** The line under a child card's chips: `⑂ child of web-shop/main 🔵 Local · Checkout redesign`. */
+export function parentLineText(r: ParentRef, hosts: readonly string[], colors: HostColors = {}): string {
+  const who = r.otherHost ? `${r.label} ${hostWithDot(r.otherHost, hosts, colors)}` : r.label
+  return `⑂ child of ${who}${r.chat ? ` · ${r.chat}` : ''}`
 }

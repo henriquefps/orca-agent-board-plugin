@@ -31,6 +31,13 @@ like Orca's right sidebar (about 470 px). Used to settle what the board shows.
 - Next: release tag `v0.1.0`, the `orca-plugin` topic and the catalog entry
   (`orca plugin release-entry`).
 
+## v0.1.2 (done)
+
+- One status icon per card (the badge is text only), a colour per machine (pressable host chips,
+  remembered), a parent line on child cards, other machines' agents open in this computer's window
+  (`workspace.open` with `runtime:<environment id>` rows), and a message when the floating workspace is
+  closed.
+
 ## Later
 
 - Drop the CLI and the session-store read as Orca's host API grows (see the gaps in
