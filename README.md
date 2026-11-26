@@ -100,11 +100,16 @@ card elements, collapsed groups) is kept by Orca for the plugin and needs no `st
   that differs from the folder name) wins on any host, else this computer's. Children nest under their
   parent; a child whose parent is in another project says "child of …".
 - **Tree:** the whole parent/child chain across hosts and projects.
-- **Click** an agent or workspace to show it in **this computer's** Orca window, on any host:
-  `workspace.open` (`terminal.focus` first for a terminal agent). A paired server's workspace is found in
-  `workspace.list` by its `runtime:<environment id>` host; a terminal agent there that the host API does
-  not list is shown with `orca terminal switch`. The board never runs `worktree activate` for another
-  machine (that opens the other machine's window); when nothing can show it, the panel says so.
+- **Click** an agent or workspace to show it in **this computer's** Orca window, on any host.
+  - This computer: `terminal.focus` for a terminal agent, else `workspace.open`, else
+    `orca worktree activate`.
+  - A paired Orca server: Orca does not list its workspaces for plugins, so the board uses the CLI's
+    `orca terminal switch --environment <server>`, which moves this window to a terminal's workspace: the
+    agent's own terminal, else one of the workspace's terminals. A workspace with only chats gets a
+    temporary terminal titled "Agent Board": the board creates it, switches to it and closes it again
+    right away (also when the switch fails), and never closes any other terminal.
+  - It counts as opened only when Orca says the window moved; otherwise the panel shows why. The board
+    never runs `worktree activate` for another machine (that opens the other machine's window).
 - **Floating workspace:** a click on one of its chats maximizes it. When it is closed, Orca does not let
   plugins open it, so the panel says: "The floating workspace is closed. Press ⌘⌥A (Ctrl+Alt+A on
   Windows/Linux) to open it, then click the chat again." (dismissible).
@@ -141,19 +146,21 @@ minutes). [docs/orca-data-sources.md](docs/orca-data-sources.md) lists what each
 
 ## Known limits
 
-- **No chat-tab focus.** Orca has no API to focus one chat tab: clicking a chat opens its workspace, and a
-  terminal agent focuses its terminal.
+- **No chat-tab focus.** Orca has no API to focus one chat tab: clicking a chat opens its workspace, with
+  whatever tab was last active there, and a terminal agent focuses its terminal.
 - **Floating workspace chats** are listed on this computer only. Neither the CLI nor the host API lists
   them, so the worker reads their ids from Orca's local session store (`agent-session-domain.db` in Orca's
   user data folder, read-only, with the `sqlite3` command) and asks `orca agent show` for each. Without
   `sqlite3` or the file, the floating workspace is left out silently. Clicking one shows the floating
   workspace if it is open; plugins cannot open it, so when it is closed the panel tells you its shortcut.
-- **Other machines' chats without a `workspace.list` row:** a workspace Orca does not list for plugins
-  cannot be shown in this window; if it has a terminal the board switches to that, else the panel says
-  it cannot be shown here.
+- **Other machines' workspaces** are not in the host API's `workspace.list` (Orca leaves paired servers
+  out of it), so `workspace.open` cannot reach them and they open through the Orca CLI. A chat-only
+  workspace briefly gets a temporary "Agent Board" terminal to show it; if a crash ever leaves one
+  behind, its title says where it came from and you can close it. The window shows the workspace with
+  whatever tab was last active there, not the chat you clicked.
 - **Needs the Orca CLI:** parent and child workspaces, other Orca servers, one project per Git remote,
   display names from other hosts, linked PRs, last replies, per-agent unread and failed/interrupted
-  outcomes, and showing terminal agents of other Orca servers that the host API does not list.
+  outcomes, and showing other Orca servers' workspaces in this window.
 - Pressing the status bar item shows the panel through `orca plugin open`; if that fails it toggles the
   right sidebar.
 - The panel draws at most 60 agent cards at a time; **Show more** adds 60 more.

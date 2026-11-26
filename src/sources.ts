@@ -50,6 +50,18 @@ export function hostsFromEnvironments(envList: unknown): CliHost[] {
 /** The host API's `hostId` for a CLI host: `local`, or `runtime:<environment id>`. */
 export const hostIdOfCliHost = (h: CliHost): string | null => (h.env === 'local' ? 'local' : h.id ? `runtime:${h.id}` : null)
 
+/** `terminal switch --json`: whether this computer's window moved to the terminal's workspace. */
+export const navigated = (result: unknown): boolean => obj(obj(result).focus).navigated === true
+
+/** Why `terminal switch` did not navigate, when Orca says. */
+export function notNavigatedReason(result: unknown): string | null {
+  const f = obj(obj(result).focus)
+  return clip(f.reason, 200) ?? clip(f.error, 200) ?? clip(f.message, 200)
+}
+
+/** `terminal create --json`: the new terminal's handle. */
+export const createdHandle = (result: unknown): string | null => str(obj(obj(result).terminal).handle) || null
+
 export function reposFromCli(host: string, repoList: unknown): RepoRow[] {
   return arr(obj(repoList).repos).map((r0) => {
     const r = obj(r0)

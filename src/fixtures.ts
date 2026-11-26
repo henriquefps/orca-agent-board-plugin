@@ -1,14 +1,15 @@
 // Invented Orca answers for tests, checks and screenshots. Hosts, projects, people and messages
 // are made up: two machines ("Local", "Build server"), three projects. The new cases of v0.1.2:
 // children on another host than their parent (payment-step, receipt-email), a terminal agent on
-// another host (receipt-email).
+// another host (receipt-email). v0.1.4: chat-only workspaces on another host (payment-step,
+// flaky-tests), which the board shows here through a temporary terminal.
 import { NOTICE_NO_CLI, type BoardSnapshot } from './model.ts'
 import type { CliHostData } from './sources.ts'
 import { floatingWorkspace, hostsFromEnvironments, reposFromCli, snapshotFromCli, snapshotFromHost } from './sources.ts'
 
 const MIN = 60_000
 
-/** The paired server's environment id: `workspace.list` names its rows `runtime:<id>`. */
+/** The paired server's environment id: Orca's host API names that server `runtime:<id>`. */
 export const BUILD_ENV_ID = 'env-1'
 
 export function cliFixture(now = Date.now()): { environments: unknown; data: CliHostData[]; floatingShows: unknown[] } {
@@ -270,7 +271,9 @@ export function cliAnswers(now = Date.now()): (args: readonly string[]) => unkno
         .map((a) => ({ handle: a.address, connected: true, agentIdentity: { agent: a.agentType } }))
       return { terminals: terms }
     }
-    if (args[0] === 'terminal' && args[1] === 'switch') return { navigated: true }
+    if (args[0] === 'terminal' && args[1] === 'switch') return { focus: { navigated: true } }
+    if (args[0] === 'terminal' && args[1] === 'create') return { terminal: { handle: 'term_board-temp' } }
+    if (args[0] === 'terminal' && args[1] === 'close') return { close: { ptyKilled: true } }
     return undefined
   }
 }
@@ -278,23 +281,18 @@ export function cliAnswers(now = Date.now()): (args: readonly string[]) => unkno
 const obj = (x: unknown): Record<string, unknown> => (x && typeof x === 'object' ? (x as Record<string, unknown>) : {})
 
 /**
- * `workspace.list` as this computer's Orca answers it: its own workspaces (`hostId` local) and the
- * paired server's (`runtime:<environment id>`). The receipt-email row has another id than the CLI's
- * identity key, so it maps by path.
+ * `workspace.list` as this computer's Orca answers it: only its own workspaces. Orca omits paired
+ * servers from the host API (`hostScope.omittedHostIds` names them `runtime:<environment id>`).
  */
 export function workspaceRowsFixture(now = Date.now()) {
-  const runtime = `runtime:${BUILD_ENV_ID}`
-  const row = (id: string, name: string, path: string, hostId: string, minutes: number) => ({
-    id, kind: 'worktree' as const, name, path, branch: name, hostId,
+  const row = (id: string, name: string, path: string, minutes: number) => ({
+    id, kind: 'worktree' as const, name, path, branch: name, hostId: 'local',
     status: { state: 'done', unread: false, terminalCount: 1, lastActivityAt: now - minutes * MIN }
   })
   return [
-    row('identity:wt2:local:shop-main', 'main', '/home/dev/code/web-shop', 'local', 4),
-    row('identity:wt2:local:shop-cart', 'cart-totals', '/home/dev/workspaces/web-shop/cart-totals', 'local', 1),
-    row('identity:wt2:local:pay-keys', 'key-rotation', '/home/dev/workspaces/payments-api/key-rotation', 'local', 2),
-    row('identity:wt2:runtime:shop-pay', 'payment-step', '/srv/work/workspaces/payment-step', runtime, 3),
-    row('wt-remote-receipt', 'receipt-email', '/srv/work/workspaces/receipt-email', runtime, 9),
-    row('identity:wt2:runtime:pay-flaky', 'flaky-tests', '/srv/work/workspaces/flaky-tests', runtime, 30)
+    row('identity:wt2:local:shop-main', 'main', '/home/dev/code/web-shop', 4),
+    row('identity:wt2:local:shop-cart', 'cart-totals', '/home/dev/workspaces/web-shop/cart-totals', 1),
+    row('identity:wt2:local:pay-keys', 'key-rotation', '/home/dev/workspaces/payments-api/key-rotation', 2)
   ]
 }
 

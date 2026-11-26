@@ -35,7 +35,7 @@ like Orca's right sidebar (about 470 px). Used to settle what the board shows.
 
 - One status icon per card (the badge is text only), a colour per machine (pressable host chips,
   remembered), a parent line on child cards, other machines' agents open in this computer's window
-  (`workspace.open` with `runtime:<environment id>` rows), and a message when the floating workspace is
+  (`workspace.open` with `runtime:<environment id>` rows; this never worked, see v0.1.4), and a message when the floating workspace is
   closed.
 
 ## v0.1.3 (done)
@@ -46,6 +46,15 @@ like Orca's right sidebar (about 470 px). Used to settle what the board shows.
   parent, last reply, status label, children summary, agent kind, time, subagents, terminal tag) and
   Show all; the choice applies to every card in every view and persists. Rows with nothing left collapse.
   Same capabilities as v0.1.2.
+
+## v0.1.4 (done)
+
+- Other machines' workspaces open in **this computer's** window again. Orca leaves paired servers out of
+  the host API's `workspace.list`, so `workspace.open` never reached them: the board now uses the CLI's
+  `terminal switch --environment <server>` to the agent's or the workspace's terminal, and for a
+  chat-only workspace a temporary "Agent Board" terminal it creates, switches to and always closes.
+  Success only when Orca says the window navigated; otherwise the panel says why. Same capabilities
+  as v0.1.3.
 
 ## Later
 

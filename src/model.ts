@@ -82,6 +82,22 @@ const CLI_FEATURES = 'parent and child workspaces, other Orca servers, projects 
 export const NOTICE_NO_CLI = `Orca CLI not found: ${CLI_FEATURES}`
 export const noticeCliFailed = (error: string): string => `Orca CLI failed (${error}): ${CLI_FEATURES}`
 
+// Why a paired server's workspace did not open in this window (the panel puts "Could not open …:"
+// in front). The board shows them with `terminal switch --environment <server>`.
+
+/** The title of the temporary terminal the board opens (and closes) to show a chat-only workspace. */
+export const TEMP_TERMINAL_TITLE = 'Agent Board'
+export const noticeRemoteNeedsCli = (host: string): string =>
+  `${host} is another Orca server; showing its workspaces in this window needs the Orca CLI.`
+export const noticeRemoteNoAddress = (host: string): string =>
+  `Orca gave no address for this ${host} workspace, so it cannot be shown in this window.`
+export const noticeRemoteNoTerminal = (host: string, error: string): string =>
+  `${host} did not open the terminal that shows its workspace in this window (${error}).`
+export const noticeRemoteSwitchFailed = (host: string, error: string): string =>
+  `Orca could not move this window to the ${host} workspace (${error}).`
+export const noticeRemoteNotNavigated = (host: string, reason: string | null): string =>
+  `Orca did not move this window to the ${host} workspace${reason ? ` (${reason})` : ''}.`
+
 // ---------------------------------------------------------------------------------------------
 // Status: one per agent card, most urgent first.
 

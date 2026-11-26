@@ -2,6 +2,7 @@
 // Every scenario answers the board from invented fixtures, so no real Orca data is shown.
 import { defineCheck } from 'orca/testing'
 import { hostOnlySnapshotFixture, snapshotFixture } from './fixtures.ts'
+import { noticeRemoteNotNavigated } from './model.ts'
 import { FLOATING_CLOSED } from './panel.tsx'
 
 const board = () => snapshotFixture()
@@ -66,12 +67,23 @@ export default defineCheck({
     persisted: { plugin: { view: 'list', filters: { ...allOff, hideChildren: false } } }
   },
   // Agents on another host: children of a Local parent and a terminal agent on the Build server.
-  // Pressing one goes to the worker (board.open is not stubbed), which opens it in this window
-  // with workspace.open / terminal.focus / terminal switch; check cannot press, so the routing
-  // itself is tested in src/worker.test.ts.
+  // Pressing one goes to the worker (board.open is not stubbed), which shows it in this window with
+  // `terminal switch` (a temporary terminal for a chat-only workspace); check cannot press, so the
+  // routing itself is tested in src/worker.test.ts.
   otherHost: {
     requests: { 'board.snapshot': board },
     persisted: { plugin: { view: 'tree', filters: allOff, host: 'Build server' } }
+  },
+  // A Build server workspace did not open here: the inline notice with Orca's reason.
+  otherHostNotice: {
+    requests: { 'board.snapshot': board },
+    persisted: {
+      plugin: {
+        view: 'list',
+        filters: allOff,
+        openNotice: { tone: 'danger', text: `Could not open flaky-tests: ${noticeRemoteNotNavigated('Build server', 'no desktop window is open')}` }
+      }
+    }
   },
   // The floating workspace was closed when its chat was pressed.
   floatingClosed: {

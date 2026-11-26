@@ -205,18 +205,32 @@ createServer(async (req, res) => {
         return res.end(JSON.stringify({ error: 'the CLI cannot open the floating workspace; use its shortcut in Orca' }));
       }
       // `worktree activate --environment <server>` opens the workspace in that server's own window.
-      // For another machine, switch THIS machine's window to one of the workspace's terminals instead
-      // (`terminal switch --environment` navigates the local desktop). Chat-only remote workspaces
-      // have no terminal: the CLI cannot show them here (the plugin uses workspace.open for that).
+      // For another machine, switch THIS machine's window with `terminal switch --environment`: to one
+      // of the workspace's terminals, else to a temporary terminal created for it and always closed
+      // again (only that one). Success only when Orca says the window navigated.
       let r;
       let how;
       const remote = env !== 'local';
       const list = await orca(['terminal', 'list', '--environment', env, '--worktree', selector]);
       const terms = (list.result?.terminals || []).filter((t) => t.connected !== false && t.handle);
       const pick = terms.find((t) => t.agentIdentity) || terms[0];
+      const switchHere = async (handle) => {
+        const s = await orca(['terminal', 'switch', '--environment', env, '--terminal', handle]);
+        if (s.error) return s;
+        return s.result?.focus?.navigated === true ? s : { error: `Orca did not move this window to the ${env} workspace` };
+      };
       if (remote) {
-        if (pick) { r = await orca(['terminal', 'switch', '--environment', env, '--terminal', pick.handle]); how = 'terminal switch'; }
-        else { r = { error: 'this remote workspace has only chats; the prototype cannot show it in this window (the plugin can)' }; how = 'none'; }
+        if (pick) { r = await switchHere(pick.handle); how = 'terminal switch'; }
+        else {
+          how = 'temporary terminal';
+          const made = await orca(['terminal', 'create', '--environment', env, '--worktree', selector, '--title', 'Agent Board']);
+          const temp = made.result?.terminal?.handle;
+          if (!temp) r = { error: made.error || 'Orca did not give a terminal handle' };
+          else {
+            try { r = await switchHere(temp); }
+            finally { await orca(['terminal', 'close', '--environment', env, '--terminal', temp]); }
+          }
+        }
       } else {
         r = await orca(['worktree', 'activate', '--environment', env, '--worktree', selector]);
         how = 'worktree activate';
