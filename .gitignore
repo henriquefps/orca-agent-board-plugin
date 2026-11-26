@@ -1,0 +1,7 @@
+node_modules/
+.orca/
+.playwright-mcp/
+.DS_Store
+*.log
+.env
+.env.*

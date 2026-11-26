@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Board · prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #141414; --panel: #1b1b1b; --raised: #232323; --hover: #262626; --line: #2c2c2c;
+    --text: #e8e8e8; --muted: #9b9b9b; --faint: #6e6e6e; --accent: #d97757;
+    --working: #6aa9ff; --waiting: #f2b84b; --done: #5fb878; --fail: #e5645a;
+    --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.4 var(--font); }
+  body { display: flex; justify-content: center; }
+  .panel { width: 470px; height: 100vh; background: var(--panel); border-left: 1px solid var(--line); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  header { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+  .titlebar { display: flex; align-items: center; gap: 8px; }
+  .titlebar h1 { font-size: 13px; font-weight: 600; margin: 0; }
+  .titlebar .sub { color: var(--muted); font-size: 12px; }
+  .titlebar .spacer { flex: 1; }
+  button, select, input { font: inherit; color: var(--text); }
+  .icon-btn { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
+  select { background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--raised); border: 1px solid var(--line); border-radius: 8px; margin-top: 10px; padding: 2px; }
+  .seg button { background: none; border: 0; padding: 6px 0; border-radius: 6px; cursor: pointer; color: var(--muted); }
+  .seg button.on { background: #333; color: var(--text); }
+  .search { margin-top: 8px; width: 100%; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; outline: none; }
+  .search:focus { border-color: #444; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; color: var(--muted); cursor: pointer; font-size: 12px; }
+  .chip.on { border-color: #e8e8e8; background: #e8e8e8; color: #141414; font-weight: 600; }
+  .chip.on .n { color: #555; }
+  .chip .n { color: var(--faint); margin-left: 3px; }
+  main { flex: 1; overflow-y: auto; padding-bottom: 40px; }
+  .count { display: flex; justify-content: space-between; padding: 10px 14px 6px; color: var(--muted); font-size: 12px; }
+  .group-h { display: flex; align-items: center; gap: 8px; padding: 9px 14px; cursor: pointer; border-top: 1px solid var(--line); user-select: none; }
+  .group-h:hover { background: var(--hover); }
+  .group-h .caret { color: var(--faint); width: 10px; transition: transform .12s; }
+  .group-h.closed .caret { transform: rotate(-90deg); }
+  .group-h .name { font-weight: 600; }
+  .group-h .right { margin-left: auto; display: flex; gap: 6px; align-items: center; color: var(--faint); font-size: 12px; }
+  .host { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: #2a2a2a; color: var(--muted); letter-spacing: .02em; }
+  .host.h0 { background: #2a2f3a; color: #a9c1ea; }
+  .host.h1 { background: #2c3a2f; color: #9fd3a9; }
+  .host.h2 { background: #3a332a; color: #e6c48f; }
+  .host.h3 { background: #36293a; color: #d6b0e6; }
+  .host.h4 { background: #2a3638; color: #9fd0d6; }
+  .ws { padding: 6px 14px 6px calc(14px + var(--depth, 0) * 16px); position: relative; }
+  .ws-h { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; cursor: pointer; padding: 3px 6px; margin: 0 -6px; border-radius: 6px; }
+  .ws-h:hover { background: var(--hover); color: var(--text); }
+  .ws-h .wname { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-h .right { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+  .ws.child::before { content: ""; position: absolute; left: calc(6px + var(--depth) * 16px); top: 0; bottom: 0; border-left: 1px solid #333; }
+  .tag { font-size: 11px; color: var(--faint); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+  .tag.k-in-review { color: #c9a7ff; border-color: #4b3d66; }
+  .tag.k-completed { color: var(--done); border-color: #2f4a37; }
+  .tag.k-todo { color: var(--muted); }
+  .tag.pr { color: #9fc3ff; text-decoration: none; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot.unread { background: var(--working); }
+  .agent { display: block; margin: 4px 0 2px; padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .agent:hover { background: var(--hover); border-color: var(--line); }
+  .agent .t { display: flex; gap: 7px; align-items: center; font-weight: 500; }
+  .agent .t span.title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent .msg { color: var(--muted); margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .agent .msg b { color: #bdbdbd; font-weight: 500; }
+  .agent .meta { display: flex; gap: 6px; align-items: center; color: var(--faint); font-size: 12px; margin-top: 5px; flex-wrap: wrap; }
+  .state { font-size: 11px; padding: 0 6px; border-radius: 4px; }
+  .state.working { color: var(--working); background: #1f2c3f; }
+  .state.waiting, .state.blocked { color: var(--waiting); background: #3a3020; }
+  .state.done { color: var(--done); background: #1f3326; }
+  .state.fail { color: var(--fail); background: #3d2321; }
+  .spark { color: var(--accent); }
+  .noagent { color: var(--faint); font-size: 12px; padding: 2px 0 2px 2px; }
+  .empty { color: var(--faint); padding: 30px 14px; text-align: center; }
+  .errors { margin: 8px 14px; padding: 8px 10px; border: 1px solid #5a2f2b; background: #2b1c1a; color: #f0a39c; border-radius: 8px; font-size: 12px; }
+  .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #2d2d2d; border: 1px solid #444; padding: 8px 14px; border-radius: 8px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .from { font-size: 11px; color: var(--faint); }
+  .agent .where { display: flex; gap: 6px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
+  .agent .where .ws { color: #cfcfcf; border-color: #3a3a3a; font-size: 11.5px; }
+  .agent .where .warn { margin-left: auto; font-size: 11px; color: var(--waiting); }
+  .agent.child-waiting { border-color: #5a4a26; background: #241f16; }
+  .children { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
+  .children.alert { border-color: #5a4a26; }
+  .cs { margin-left: 4px; }
+  .cs.working { color: var(--working); }
+  .cs.waiting { color: var(--waiting); }
+  .cs.fail { color: var(--fail); }
+
+  .ico { width: 14px; height: 14px; flex-shrink: 0; display: inline-block; vertical-align: -2px; }
+  .ico.spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .agent { position: relative; padding-left: 13px; }
+  .agent::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: transparent; }
+  .agent.st-waiting::before { background: #ff8a3d; }
+  .agent.st-failed::before { background: var(--fail); }
+  .agent.st-working::before { background: var(--working); }
+  .agent.st-unread::before { background: var(--waiting); }
+  .agent.st-waiting { background: #2a1f17; border-color: #4a3322; }
+  .agent.st-done .t .title { color: #cfcfcf; font-weight: 400; }
+  .agent.st-done .msg { color: #858585; }
+  .agent.st-unread .t .title, .agent.st-waiting .t .title { color: #fff; font-weight: 600; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+  .badge.waiting { color: #1b1206; background: #ff8a3d; }
+  .badge.failed { color: #fff; background: #b8433a; }
+  .badge.working { color: #cfe2ff; background: #1f3a63; }
+  .badge.unread { color: #241a05; background: var(--waiting); }
+  .badge.done { color: var(--faint); background: none; font-weight: 400; padding: 0; }
+  .t .ico.st-waiting { color: #ff8a3d; } .t .ico.st-failed { color: var(--fail); }
+  .t .ico.st-working { color: var(--working); } .t .ico.st-unread { color: var(--waiting); } .t .ico.st-done { color: var(--faint); }
+  .children .ico { width: 12px; height: 12px; }
+  .chip .ico { width: 12px; height: 12px; margin-right: 3px; }
+  .chip.c-needs .ico { color: #ff8a3d; } .chip.c-running .ico { color: var(--working); } .chip.c-unread .ico { color: var(--waiting); }
+</style>
+</head>
+<body>
+<div class="panel">
+  <header>
+    <div class="titlebar">
+      <h1>Agent Board</h1>
+      <span class="sub" id="sub">loading…</span>
+      <span class="spacer"></span>
+      <select id="host"><option value="">All hosts</option></select>
+      <button class="icon-btn" id="refresh" title="Refresh">↻</button>
+    </div>
+    <div class="seg" id="views">
+      <button data-v="projects">Projects</button>
+      <button data-v="tree">Tree</button>
+      <button data-v="list">List</button>
+    </div>
+    <input class="search" id="q" placeholder="Search agents, projects or messages" autocomplete="off">
+    <div class="chips" id="chips"></div>
+  </header>
+  <main id="main"></main>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const S = JSON.parse(localStorage.getItem('ab-state') || '{}');
+const state = Object.assign({ view: 'list', host: '', q: '', closed: {} }, S);
+state.filters = Object.assign({ hideIdle: true, hideChildren: true }, S.filters);
+const save = () => localStorage.setItem('ab-state', JSON.stringify({ view: state.view, host: state.host, filters: state.filters, closed: state.closed }));
+let data = null;
+
+const hostCls = (h) => `h${Math.max(0, (data?.hosts || []).indexOf(h)) % 5}`;
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function ago(ms) {
+  if (!ms) return '—';
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+function agentState(a) {
+  if (a.state === 'done' && (a.outcome === 'failure' || a.interrupted)) return ['fail', a.interrupted ? 'interrupted' : 'failed'];
+  return [a.state, { working: 'running', waiting: 'waiting', blocked: 'blocked', done: 'done' }[a.state] || a.state];
+}
+const isWaiting = (a) => a.state === 'waiting' || a.state === 'blocked';
+const isFailed = (a) => a.state === 'done' && (a.outcome === 'failure' || a.interrupted);
+
+// Children of a workspace = every descendant workspace (parent links across hosts and projects).
+
+const ICONS = {
+  bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+  loader: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+  hand: '<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>',
+  check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  branch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+};
+const icon = (name, cls = '') => `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="${name === 'bell' ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+
+// One status per agent card, most urgent first.
+function cardStatus(a, w) {
+  if (a.state === 'waiting' || a.state === 'blocked') return ['waiting', 'hand', a.state === 'blocked' ? 'blocked: needs you' : 'needs you'];
+  if (a.state === 'done' && (a.outcome === 'failure' || a.interrupted)) return ['failed', 'alert', a.interrupted ? 'interrupted' : 'failed'];
+  if (a.state === 'working') return ['working', 'loader', 'running'];
+  const latest = latestOf(w) === a;
+  if (a.unread || (w.unread && latest)) return ['unread', 'bell', 'unread'];
+  return ['done', 'check', 'done'];
+}
+
+let kids = new Map();
+function indexChildren() {
+  kids = new Map();
+  for (const w of data.workspaces) if (w.parentId) (kids.get(w.parentId) || kids.set(w.parentId, []).get(w.parentId)).push(w);
+}
+function descendants(w, out = []) {
+  for (const c of kids.get(w.id) || []) { out.push(c); descendants(c, out); }
+  return out;
+}
+function childSummary(w) {
+  const ds = descendants(w);
+  const agents = ds.flatMap((d) => d.agents);
+  return {
+    count: ds.length,
+    working: agents.filter((a) => a.state === 'working').length,
+    waiting: agents.filter(isWaiting).length,
+    failed: agents.filter(isFailed).length,
+    unread: ds.filter((d) => d.unread).length,
+  };
+}
+
+// Filters work per agent. The children summary sits on a workspace's most recent chat,
+// so a child's state counts for that chat only (the one that shows the summary).
+const latestOf = (w) => (w.allAgents || w.agents)[0];
+const childAgents = (w) => descendants(w).flatMap((d) => d.agents);
+const agentUnread = (a, w) => a.unread || (w.unread && latestOf(w) === a);
+const agentRunning = (a, w) => a.state === 'working' || (latestOf(w) === a && childAgents(w).some((c) => c.state === 'working'));
+const agentNeedsMe = (a, w) => isWaiting(a) || agentUnread(a, w) || (latestOf(w) === a && childAgents(w).some(isWaiting));
+
+const FILTERS = [
+  ['needsMe', 'Needs me', agentNeedsMe],
+  ['running', 'Running', agentRunning],
+  ['unread', 'Unread', agentUnread],
+  ['hideChildren', 'Hide children', null, 'list'],
+  ['hideIdle', 'Hide idle', null],
+];
+
+function inScope(w) {
+  if (state.host && w.host !== state.host) return false;
+  if (state.view === 'list' && state.filters.hideChildren && w.parentId) return false;
+  return true;
+}
+
+function visibleWorkspaces() {
+  const q = state.q.trim().toLowerCase();
+  const active = FILTERS.filter(([k, , fn]) => fn && state.filters[k]);
+  const out = [];
+  for (const w of data.workspaces) {
+    if (!inScope(w)) continue;
+    const wsText = [data.projects[w.project], w.repo, w.name, w.branch].join(' ').toLowerCase();
+    const agents = w.agents.filter((a) => {
+      for (const [, , fn] of active) if (!fn(a, w)) return false;
+      if (q && !(wsText.includes(q) || [a.title, a.last, a.prompt].join(' ').toLowerCase().includes(q))) return false;
+      return true;
+    });
+    const filtering = active.length > 0 || q;
+    if (agents.length === 0 && (filtering || state.filters.hideIdle || w.agents.length > 0)) continue;
+    out.push({ ...w, agents, allAgents: w.agents });
+  }
+  return out;
+}
+
+function renderChips() {
+  const all = data ? data.workspaces.filter(inScope).flatMap((w) => w.agents.map((a) => [a, w])) : [];
+  document.getElementById('chips').innerHTML = FILTERS.filter(([, , , onlyIn]) => !onlyIn || onlyIn === state.view).map(([k, label, fn]) => {
+    const n = fn ? all.filter(([a, w]) => fn(a, w)).length : '';
+    const ic = { needsMe: ['c-needs', 'hand'], running: ['c-running', 'loader'], unread: ['c-unread', 'bell'] }[k];
+    return `<button class="chip ${state.filters[k] ? 'on' : ''} ${ic ? ic[0] : ''}" data-f="${k}">${ic ? icon(ic[1], k === 'running' && n ? 'spin' : '') : ''}${label}${n !== '' ? `<span class="n">${n}</span>` : ''}</button>`;
+  }).join('');
+}
+
+function childChip(w) {
+  const s = childSummary(w);
+  if (!s.count) return '';
+  const parts = [];
+  if (s.waiting) parts.push(`<span class="badge waiting">${icon('hand')} ${s.waiting} ${s.waiting > 1 ? 'children need' : 'child needs'} you</span>`);
+  if (s.failed) parts.push(`<span class="badge failed">${icon('alert')} ${s.failed} failed</span>`);
+  if (s.working) parts.push(`<span class="badge working">${icon('loader', 'spin')} ${s.working} running</span>`);
+  if (s.unread) parts.push(`<span class="badge unread">${icon('bell')} ${s.unread}</span>`);
+  const tip = `${s.count} child workspaces: ${s.working} running, ${s.waiting} waiting, ${s.failed} failed, ${s.unread} unread`;
+  return `<span class="children" title="${tip}">${icon('branch')} ${s.count} ${s.count > 1 ? 'children' : 'child'}</span>${parts.join('')}`;
+}
+
+function agentCard(a, w) {
+  const [st, ic, label] = cardStatus(a, w);
+  const title = a.title || a.prompt || '(untitled)';
+  const msg = a.last ? `<b>Agent:</b> ${esc(a.last)}` : a.prompt ? `<b>You:</b> ${esc(a.prompt)}` : '';
+  return `<div class="agent st-${st}" data-open="${esc(w.id)}" title="Open in Orca">
+    <div class="where"><span class="tag ws">${w.floating ? 'Floating workspace' : `${esc(data.projects[w.project] || w.repo)}/${esc(w.name)}`}</span><span class="host ${hostCls(w.host)}">${w.host}</span></div>
+    <div class="t">${icon(ic, `st-${st} ${st === 'working' ? 'spin' : ''}`)}<span class="title">${esc(title)}</span></div>
+    ${msg ? `<div class="msg">${msg}</div>` : ''}
+    <div class="meta">
+      <span class="badge ${st}">${st === 'done' ? '' : icon(ic, st === 'working' ? 'spin' : '')}${label}</span>
+      ${latestOf(w) === a ? childChip(w) : ''}
+      <span>${esc(a.agent || '')}</span>·<span>${ago(a.updatedAt)}</span>
+      ${a.subagents ? `·<span>${a.subagents} subagent${a.subagents > 1 ? 's' : ''}</span>` : ''}
+      ${a.kind === 'terminal' ? '·<span>terminal</span>' : ''}
+    </div>
+  </div>`;
+}
+
+function wsBlock(w, depth, opts = {}) {
+  const prs = w.prs.map((p) => `<a class="tag pr" href="${esc(p.url)}" target="_blank">#${p.number}</a>`).join('');
+  const parent = opts.foreignParent ? `<div class="from">↳ child of ${esc(opts.foreignParent)}</div>` : '';
+  const agents = w.agents.length ? w.agents.map((a) => agentCard(a, w)).join('') : `<div class="noagent">no open agent</div>`;
+  return `<div class="ws ${depth ? 'child' : ''}" style="--depth:${depth}">
+    <div class="ws-h" data-open="${esc(w.id)}" title="Open workspace in Orca">
+      ${w.unread ? '<span class="dot unread" title="unread"></span>' : ''}
+      <span>${w.isMain ? '⌂' : '⑂'}</span><span class="wname">${esc(opts.showProject ? `${data.projects[w.project] || w.repo}/` : '')}${esc(w.name)}</span>
+      <span class="host ${hostCls(w.host)}">${w.host}</span>
+      <span class="right">${prs}${w.kanban && w.kanban !== 'in-progress' ? `<span class="tag k-${w.kanban}">${w.kanban}</span>` : ''}${w.pinned ? '<span title="pinned">📌</span>' : ''}<span>${ago(w.lastAt)}</span></span>
+    </div>
+    ${parent}${agents}
+  </div>`;
+}
+
+function renderTreeInto(list, roots, byParent, opts) {
+  const out = [];
+  const walk = (w, depth) => {
+    out.push(wsBlock(w, depth, opts(w)));
+    for (const c of (byParent.get(w.id) || []).sort((a, b) => b.lastAt - a.lastAt)) walk(c, depth + 1);
+  };
+  roots.sort((a, b) => b.lastAt - a.lastAt).forEach((r) => walk(r, 0));
+  return out.join('');
+}
+
+function render() {
+  const main = document.getElementById('main');
+  renderChips();
+  document.querySelectorAll('#views button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.view));
+  if (!data) return;
+  const ws = visibleWorkspaces();
+  const byId = new Map(data.workspaces.map((w) => [w.id, w]));
+  const visibleIds = new Set(ws.map((w) => w.id));
+  const agentsCount = ws.reduce((n, w) => n + w.agents.length, 0);
+  let html = data.errors.length ? `<div class="errors">${data.errors.map(esc).join('<br>')}</div>` : '';
+  html += `<div class="count"><span>${agentsCount} agents · ${ws.length} workspaces</span><span>last activity</span></div>`;
+  const label = (w) => `${data.projects[w.project] || w.repo}/${w.name}`;
+
+  if (state.view === 'list') {
+    const items = ws.flatMap((w) => w.agents.map((a) => [a, w])).sort((x, y) => y[0].updatedAt - x[0].updatedAt);
+    html += items.length ? `<div style="padding:0 8px">${items.map(([a, w]) => agentCard(a, w)).join('')}</div>` : '';
+  } else if (state.view === 'tree') {
+    const byParent = new Map();
+    const roots = [];
+    for (const w of ws) {
+      if (w.parentId && visibleIds.has(w.parentId)) (byParent.get(w.parentId) || byParent.set(w.parentId, []).get(w.parentId)).push(w);
+      else roots.push(w);
+    }
+    html += renderTreeInto(html, roots, byParent, (w) => ({ showProject: true, foreignParent: w.parentId && !visibleIds.has(w.parentId) && byId.get(w.parentId) ? label(byId.get(w.parentId)) : null }));
+  } else {
+    const groups = new Map();
+    for (const w of ws) (groups.get(w.project) || groups.set(w.project, []).get(w.project)).push(w);
+    const sorted = [...groups.entries()].sort((a, b) => Math.max(...b[1].map((w) => w.lastAt)) - Math.max(...a[1].map((w) => w.lastAt)));
+    for (const [p, list] of sorted) {
+      const closed = !!state.closed[p];
+      const hosts = [...new Set(list.map((w) => w.host))];
+      const last = Math.max(...list.map((w) => w.lastAt));
+      const attention = list.filter((w) => w.agents.some((a) => agentNeedsMe(a, w))).length;
+      html += `<div class="group-h ${closed ? 'closed' : ''}" data-toggle="${esc(p)}">
+        <span class="caret">▾</span><span class="name">${esc(data.projects[p] || p)}</span>
+        ${hosts.map((h) => `<span class="host ${hostCls(h)}">${h}</span>`).join('')}
+        <span class="right">${attention ? `<span class="dot unread"></span>` : ''}<span>${list.length} ws</span>·<span>${ago(last)}</span></span>
+      </div>`;
+      if (closed) continue;
+      const ids = new Set(list.map((w) => w.id));
+      const byParent = new Map();
+      const roots = [];
+      for (const w of list) {
+        if (w.parentId && ids.has(w.parentId)) (byParent.get(w.parentId) || byParent.set(w.parentId, []).get(w.parentId)).push(w);
+        else roots.push(w);
+      }
+      html += renderTreeInto(html, roots, byParent, (w) => ({ foreignParent: w.parentId && !ids.has(w.parentId) && byId.get(w.parentId) ? label(byId.get(w.parentId)) : null }));
+    }
+  }
+  if (!ws.length) html += `<div class="empty">Nothing matches these filters.</div>`;
+  main.innerHTML = html;
+  document.getElementById('sub').textContent = `updated ${ago(data.at)} · ${data.tookMs} ms`;
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+async function load() {
+  document.getElementById('sub').textContent = 'updating…';
+  try {
+    const r = await fetch('/api/snapshot');
+    data = await r.json();
+    indexChildren();
+    const sel = document.getElementById('host');
+    sel.innerHTML = `<option value="">All hosts</option>` + data.hosts.map((h) => `<option ${h === state.host ? 'selected' : ''}>${h}</option>`).join('');
+    render();
+  } catch (e) {
+    document.getElementById('sub').textContent = 'could not read Orca';
+  }
+}
+
+async function openWs(id) {
+  const w = data.workspaces.find((x) => x.id === id);
+  if (!w) return;
+  toast(`Opening ${w.repo}/${w.name} (${w.host})…`);
+  const r = await fetch('/api/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ env: w.env, selector: w.selector }) });
+  const j = await r.json();
+  toast(j.error ? `Could not open: ${j.error}` : `Opened in Orca: ${w.repo}/${w.name}`);
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('a')) return;
+  const v = e.target.closest('#views button'); if (v) { state.view = v.dataset.v; save(); return render(); }
+  const f = e.target.closest('.chip'); if (f) { state.filters[f.dataset.f] = !state.filters[f.dataset.f]; save(); return render(); }
+  const g = e.target.closest('[data-toggle]'); if (g) { const k = g.dataset.toggle; state.closed[k] = !state.closed[k]; save(); return render(); }
+  const o = e.target.closest('[data-open]'); if (o) return openWs(o.dataset.open);
+});
+document.getElementById('host').addEventListener('change', (e) => { state.host = e.target.value; save(); render(); });
+document.getElementById('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+document.getElementById('refresh').addEventListener('click', load);
+load();
+setInterval(load, 15000);
+setInterval(() => data && render(), 30000);
+</script>
+</body>
+</html>
