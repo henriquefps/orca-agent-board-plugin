@@ -168,6 +168,13 @@ export const agentNeedsMe = (f: Family, a: BoardAgent, w: BoardWorkspace): boole
 export const childNeedsMe = (f: Family, a: BoardAgent, w: BoardWorkspace): boolean =>
   isLatest(a, w) && childAgents(f, w).some(isWaiting)
 
+/**
+ * How loud a card is: its own status, except that the latest chat of a workspace whose child
+ * needs the person looks like "needs you" (the most urgent status wins).
+ */
+export const cardEmphasis = (f: Family, a: BoardAgent, w: BoardWorkspace): CardStatus =>
+  childNeedsMe(f, a, w) ? 'waiting' : cardStatus(a, w).status
+
 export type FilterKey = 'needsMe' | 'running' | 'unread' | 'hideChildren' | 'hideIdle'
 export type Filters = Record<FilterKey, boolean>
 export type ViewName = 'list' | 'projects' | 'tree'
@@ -230,12 +237,15 @@ export function filterCounts(snap: BoardSnapshot, f: Family, query: BoardQuery):
   return counts
 }
 
-/** Agents that need the person, on every host: the status bar count. */
-export function needsMeCount(snap: BoardSnapshot): number {
-  const f = family(snap.workspaces)
-  let n = 0
-  for (const w of snap.workspaces) for (const a of w.agents) if (agentNeedsMe(f, a, w)) n++
-  return n
+/** The List view as it opens: every host, no search, the default filters (Hide children on). */
+export const DEFAULT_QUERY: BoardQuery = { view: 'list', host: '', q: '', filters: DEFAULT_FILTERS }
+
+/**
+ * The status bar count: the List's "Needs me" chip with the default filters, on every host. A
+ * child that needs the person counts once, through its parent's most recent chat, as on the board.
+ */
+export function needsMeCount(snap: BoardSnapshot, f: Family = family(snap.workspaces)): number {
+  return filterCounts(snap, f, DEFAULT_QUERY).needsMe
 }
 
 // ---------------------------------------------------------------------------------------------

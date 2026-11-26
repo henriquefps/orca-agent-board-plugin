@@ -19,6 +19,12 @@ export default defineCheck({
     requests: { 'board.snapshot': board },
     persisted: { plugin: { view: 'tree', filters: allOff } }
   },
+  // One card in each status (needs you, failed, running, unread, done) and a parent whose
+  // child needs you: the List with children shown.
+  statuses: {
+    requests: { 'board.snapshot': board },
+    persisted: { plugin: { view: 'list', filters: { ...allOff, hideChildren: false } } }
+  },
   needsYou: {
     requests: { 'board.snapshot': board },
     persisted: { plugin: { view: 'list', filters: { ...allOff, needsMe: true } } }
