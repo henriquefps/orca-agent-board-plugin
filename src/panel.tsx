@@ -8,6 +8,7 @@ import {
   Callout,
   Collapsible,
   EmptyState,
+  Grid,
   Heading,
   IconButton,
   Input,
@@ -24,6 +25,7 @@ import {
   Skeleton,
   Spinner,
   Stack,
+  Switch,
   Tab,
   Tabs,
   Text,
@@ -35,30 +37,34 @@ import {
 } from 'orca'
 import {
   AGENT_FILTERS,
+  CARD_ELEMENTS,
   cardStatus,
   cardEmphasis,
   childSummary,
-  cycleHostColor,
   DEFAULT_FILTERS,
+  elementsTooltip,
   family,
   filterCounts,
-  hostWithDot,
+  hiddenCount,
   isLatest,
   listItems,
   parentLineText,
   parentRef,
   projectGroups,
+  shows,
+  toggleElement,
   treeOf,
   visibleWorkspaces,
   wsLabel,
   type BoardAgent,
   type BoardQuery,
   type BoardSnapshot,
+  type CardElement,
   type CardStatus,
   type Family,
   type FilterKey,
   type Filters,
-  type HostColors,
+  type HiddenElements,
   type TreeNode,
   type ViewName,
   type VisibleWorkspace
@@ -89,8 +95,10 @@ const view = atom<ViewName | null>('view', null, { persist: 'plugin' })
 const filters = atom<Filters>('filters', DEFAULT_FILTERS, { persist: 'plugin' })
 const hostFilter = atom('host', '', { persist: 'plugin' })
 const closedGroups = atom<Record<string, boolean>>('closedGroups', {}, { persist: 'plugin' })
-/** Colours the person picked per host name (index in HOST_DOTS); the rest follow the host order. */
-const hostColors = atom<HostColors>('hostColors', {}, { persist: 'plugin' })
+/** Card elements the person hid, for every card in every view (the rest show). */
+const hiddenElements = atom<HiddenElements>('hiddenElements', {}, { persist: 'plugin' })
+/** Whether the Card elements section under the header is open. */
+const elementsOpen = atom('elementsOpen', false, { persist: 'plugin' })
 
 /** What the panel says when the floating workspace is closed (plugins cannot open it). */
 export const FLOATING_CLOSED =
@@ -233,25 +241,6 @@ function StatusBadge({ look, label }: { look: StatusLook; label: string }): Orca
   return <Badge tone={look.badge}>{label}</Badge>
 }
 
-/**
- * A host's chip: its colour dot and name. A Badge cannot be pressed, so it is the smallest outline
- * Button; pressing it gives that machine the next colour, everywhere it shows.
- */
-function HostChip({ snap, host }: { snap: BoardSnapshot; host: string }): OrcaNode {
-  const colors = read(hostColors)
-  return (
-    <Button
-      size="xs"
-      variant="outline"
-      tone="neutral"
-      tooltip="Change this machine's colour"
-      onPress={() => update(hostColors, (c) => cycleHostColor(host, snap.hosts, c))}
-    >
-      {hostWithDot(host, snap.hosts, colors)}
-    </Button>
-  )
-}
-
 /** Under a child card's chips: whose child it is. Pressing it opens the parent. */
 function ParentLine({ snap, fam, w }: { snap: BoardSnapshot; fam: Family; w: VisibleWorkspace }): OrcaNode {
   const r = parentRef(snap, fam, w)
@@ -260,13 +249,26 @@ function ParentLine({ snap, fam, w }: { snap: BoardSnapshot; fam: Family; w: Vis
   return (
     <Box paddingX="sm">
       <Text size="xs" muted truncate>
-        <Link onPress={() => open(parent.id, parent.agents[0]?.id, r.label)}>{parentLineText(r, snap.hosts, read(hostColors))}</Link>
+        <Link onPress={() => open(parent.id, parent.agents[0]?.id, r.label)}>{parentLineText(r)}</Link>
       </Text>
     </Box>
   )
 }
 
+/** The meta row's text: agent kind, time, subagents, terminal tag; only the ones shown. */
+function metaText(a: BoardAgent, hidden: HiddenElements): OrcaNode {
+  const parts: OrcaNode[] = []
+  if (shows(hidden, 'agent')) parts.push(a.agent ?? 'agent')
+  if (shows(hidden, 'time')) parts.push(<RelativeTime key="t" at={a.updatedAt} format="short" muted />)
+  if (shows(hidden, 'subagents') && a.subagents) parts.push(plural(a.subagents, 'subagent', 'subagents'))
+  if (shows(hidden, 'terminal') && a.kind === 'terminal') parts.push('terminal')
+  if (!parts.length) return null
+  return <Text size="xs" muted>{parts.flatMap((p, i) => (i ? [' · ', p] : [p]))}</Text>
+}
+
 function AgentCard({ snap, fam, a, w }: { snap: BoardSnapshot; fam: Family; a: BoardAgent; w: VisibleWorkspace }): OrcaNode {
+  const hidden = read(hiddenElements)
+  const on = (key: CardElement) => shows(hidden, key)
   const own = cardStatus(a, w)
   const look = STATUS_LOOK[cardEmphasis(fam, a, w)]
   // The badge keeps the card's own status; a waiting child shows in the children summary.
@@ -274,17 +276,28 @@ function AgentCard({ snap, fam, a, w }: { snap: BoardSnapshot; fam: Family; a: B
   const title = a.title || a.prompt || '(untitled)'
   const where = wsLabel(snap, w)
   const press = () => open(w.id, a.id, where)
-  const message = a.last ? { who: 'Agent:', text: a.last } : a.prompt ? { who: 'You:', text: a.prompt } : null
+  const message = on('reply') ? (a.last ? { who: 'Agent:', text: a.last } : a.prompt ? { who: 'You:', text: a.prompt } : null) : null
+  // Plain Badges, so the chip line is part of the card's press (its own pressable item: the
+  // status icon beside the title is an IconButton, which a pressable ListItem cannot hold).
+  const chips = [on('project') ? <Badge key="p">{where}</Badge> : null, on('host') ? <Badge key="h">{w.host}</Badge> : null].filter(Boolean)
+  const status = on('status') ? <StatusBadge look={badgeLook} label={own.label} /> : null
+  const children = on('children') && isLatest(a, w) ? <ChildBadges fam={fam} w={w} /> : null
+  // Called, not drawn as <MetaText />, so an all-hidden meta text is null and the row collapses.
+  const meta = metaText(a, hidden)
+  const metaRow = status || (children && childSummary(fam, w).count) || meta
   return (
     <Box key={a.id} direction="row" align="stretch" gap="xs" border={look.border} background={look.background} radius="md">
       {look.bar ? <Box width={BAR_WIDTH} shrink={false} border={look.bar} background={look.bar} radius="full" /> : null}
       <Box grow gap="none">
-        {/* Project first, always (the user's wireframe), then the icon beside the title. */}
-        <Box direction="row" gap="xs" wrap align="center" paddingX="sm" paddingY="xs">
-          <Badge>{where}</Badge>
-          <HostChip snap={snap} host={w.host} />
-        </Box>
-        <ParentLine snap={snap} fam={fam} w={w} />
+        {/* Project and host first (the user's wireframe; Card elements can hide them), then the icon beside the title. */}
+        {chips.length ? (
+          <List label={`${title}: where`}>
+            <ListItem onPress={press}>
+              <Row gap="xs" wrap align="center">{chips}</Row>
+            </ListItem>
+          </List>
+        ) : null}
+        {on('parent') ? <ParentLine snap={snap} fam={fam} w={w} /> : null}
         <Box direction="row" align="start">
           {/* Outside the ListItem: a pressable ListItem cannot hold an IconButton. */}
           <Box shrink={false} paddingX="xs" paddingY="xs">
@@ -302,15 +315,13 @@ function AgentCard({ snap, fam, a, w }: { snap: BoardSnapshot; fam: Family; a: B
                       <Text size="sm" weight={look.strong ? 'medium' : 'regular'} muted={!look.strong}>{message.who}</Text> {message.text.length > 180 ? `${message.text.slice(0, 179)}…` : message.text}
                     </Text>
                   ) : null}
-                  <Row gap="xs" wrap align="center">
-                    <StatusBadge look={badgeLook} label={own.label} />
-                    {isLatest(a, w) ? <ChildBadges fam={fam} w={w} /> : null}
-                    <Text size="xs" muted>
-                      {a.agent ?? 'agent'} · <RelativeTime at={a.updatedAt} format="short" muted />
-                      {a.subagents ? ` · ${plural(a.subagents, 'subagent', 'subagents')}` : ''}
-                      {a.kind === 'terminal' ? ' · terminal' : ''}
-                    </Text>
-                  </Row>
+                  {metaRow ? (
+                    <Row gap="xs" wrap align="center">
+                      {status}
+                      {children}
+                      {meta}
+                    </Row>
+                  ) : null}
                 </Stack>
               </ListItem>
             </List>
@@ -330,25 +341,18 @@ function WorkspaceBlock({ snap, fam, node, showProject, budget }: { snap: BoardS
     <Box key={w.id} direction="row">
       {node.depth ? <Box width={Math.min(node.depth, 6) * 14} shrink={false} /> : null}
       <Box grow gap="xs">
-        {/* The host chip sits outside the ListItem: a pressable ListItem cannot hold a Button. */}
-        <Box direction="row" align="center" gap="xs">
-          <Box grow>
-            <List label={name}>
-              <ListItem icon={w.floating ? 'layers' : w.isMain ? 'folder' : 'branch'} onPress={() => open(w.id, undefined, name)}>
-                <Row gap="xs" align="center" wrap>
-                  <Text weight="medium" truncate>{name}</Text>
-                  {w.unread ? <Badge tone="warning">unread</Badge> : null}
-                  {w.kanban && w.kanban !== 'in-progress' ? <Badge>{w.kanban}</Badge> : null}
-                  {w.pinned ? <Badge>pinned</Badge> : null}
-                  <Text size="xs" muted><RelativeTime at={w.lastAt} format="short" muted /></Text>
-                </Row>
-              </ListItem>
-            </List>
-          </Box>
-          <Box shrink={false}>
-            <HostChip snap={snap} host={w.host} />
-          </Box>
-        </Box>
+        <List label={name}>
+          <ListItem icon={w.floating ? 'layers' : w.isMain ? 'folder' : 'branch'} onPress={() => open(w.id, undefined, name)}>
+            <Row gap="xs" align="center" wrap>
+              <Text weight="medium" truncate>{name}</Text>
+              <Badge>{w.host}</Badge>
+              {w.unread ? <Badge tone="warning">unread</Badge> : null}
+              {w.kanban && w.kanban !== 'in-progress' ? <Badge>{w.kanban}</Badge> : null}
+              {w.pinned ? <Badge>pinned</Badge> : null}
+              <Text size="xs" muted><RelativeTime at={w.lastAt} format="short" muted /></Text>
+            </Row>
+          </ListItem>
+        </List>
         {node.foreignParent ? <Text size="xs" muted>{`↳ child of ${node.foreignParent}`}</Text> : null}
         {w.prs.length ? (
           <Row gap="sm" wrap>
@@ -409,14 +413,13 @@ function Board({ snap, q }: { snap: BoardSnapshot; q: BoardQuery }): OrcaNode {
     )
   } else {
     const closed = read(closedGroups)
-    const colors = read(hostColors)
     body = (
       <Stack gap="xs">
         {projectGroups(snap, fam, ws).map((g) => (
           <Collapsible
             key={g.key}
             title={g.name}
-            description={[g.hosts.map((h) => hostWithDot(h, snap.hosts, colors)).join(', '), plural(g.nodes.length, 'workspace', 'workspaces'), g.attention ? `${g.attention} need${g.attention === 1 ? 's' : ''} you` : ''].filter(Boolean).join(' · ')}
+            description={[g.hosts.join(', '), plural(g.nodes.length, 'workspace', 'workspaces'), g.attention ? `${g.attention} need${g.attention === 1 ? 's' : ''} you` : ''].filter(Boolean).join(' · ')}
             open={!closed[g.key]}
             onChange={(isOpen) => update(closedGroups, (c) => ({ ...c, [g.key]: !isOpen }))}
           >
@@ -444,6 +447,30 @@ function Board({ snap, q }: { snap: BoardSnapshot; q: BoardQuery }): OrcaNode {
   )
 }
 
+/** Under the header: one switch per card element, Show all, and Done. */
+function ElementsSection({ hidden }: { hidden: HiddenElements }): OrcaNode {
+  const n = hiddenCount(hidden)
+  return (
+    <Box border radius="md" padding="sm" gap="sm">
+      <Row justify="between" align="center">
+        <Text size="sm" weight="medium">{n ? `Card elements · ${n} hidden` : 'Card elements'}</Text>
+        <Row gap="xs" align="center">
+          <Button size="xs" variant="ghost" disabled={!n} onPress={() => set(hiddenElements, {})}>
+            Show all
+          </Button>
+          <IconButton icon="close" label="Close card elements" tooltip="Done" variant="ghost" size="xs" onPress={() => set(elementsOpen, false)} />
+        </Row>
+      </Row>
+      <Grid columns={2} minItemWidth="sm" gap="xs">
+        {CARD_ELEMENTS.map((e) => (
+          <Switch key={e.key} label={e.label} checked={shows(hidden, e.key)} onChange={(v) => update(hiddenElements, (h) => toggleElement(h, e.key, v))} />
+        ))}
+      </Grid>
+      <Text size="xs" muted>The status icon, the coloured bar and the title always show.</Text>
+    </Box>
+  )
+}
+
 export default function Panel(): OrcaNode {
   const snap = read(snapshot)
   const q: BoardQuery = {
@@ -456,8 +483,9 @@ export default function Panel(): OrcaNode {
   const err = read(loadError)
   const busy = read(opening)
   const notice = read(openNotice)
-  const colors = read(hostColors)
-  const hostOptions = [{ value: ALL_HOSTS, label: 'All hosts' }, ...(snap?.hosts ?? []).map((h) => ({ value: h, label: hostWithDot(h, snap?.hosts ?? [], colors) }))]
+  const hostOptions = [{ value: ALL_HOSTS, label: 'All hosts' }, ...(snap?.hosts ?? []).map((h) => ({ value: h, label: h }))]
+  const hidden = read(hiddenElements)
+  const elementsShown = read(elementsOpen)
   const content = (
     <Stack gap="sm">
       <Input
@@ -490,9 +518,18 @@ export default function Panel(): OrcaNode {
             options={hostOptions}
             onChange={(v) => set(hostFilter, v === ALL_HOSTS ? '' : v)}
           />
+          <IconButton
+            icon="layers"
+            label="Card elements"
+            tooltip={elementsTooltip(hidden)}
+            variant={elementsShown ? 'solid' : 'ghost'}
+            tone={hiddenCount(hidden) ? 'accent' : 'neutral'}
+            onPress={() => update(elementsOpen, (o) => !o)}
+          />
           <IconButton icon="refresh" label="Refresh" onPress={() => load(true)} />
         </Row>
       </Row>
+      {elementsShown ? <ElementsSection hidden={hidden} /> : null}
       {err ? <Callout tone="danger" title="Could not read Orca">{err}</Callout> : null}
       {snap?.notices.map((n) => <Callout key={n} tone="warning" icon="info">{n}</Callout>)}
       {snap?.errors.length ? <Callout tone="danger" title="Some hosts could not be read">{snap.errors.join('\n')}</Callout> : null}

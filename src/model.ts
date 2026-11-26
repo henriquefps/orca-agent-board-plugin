@@ -360,32 +360,6 @@ export function projectNames(repos: readonly RepoRow[], localHost = LOCAL_HOST):
 }
 
 // ---------------------------------------------------------------------------------------------
-// A colour per machine: a coloured circle emoji before every host name, so it works in any text.
-// Default by the host's place in the host list (this computer first); the person can cycle it.
-
-export const HOST_DOTS = ['🔵', '🟢', '🟣', '🟠', '🔴', '🟡', '🟤', '⚪'] as const
-
-/** Host name -> index in HOST_DOTS, for the hosts the person recoloured. */
-export type HostColors = Record<string, number>
-
-export function hostColorIndex(host: string, hosts: readonly string[], colors: HostColors = {}): number {
-  const chosen = colors[host]
-  const i = typeof chosen === 'number' && Number.isInteger(chosen) && chosen >= 0 ? chosen : Math.max(0, hosts.indexOf(host))
-  return i % HOST_DOTS.length
-}
-
-export const hostDot = (host: string, hosts: readonly string[], colors: HostColors = {}): string =>
-  HOST_DOTS[hostColorIndex(host, hosts, colors)] ?? HOST_DOTS[0]
-
-export const hostWithDot = (host: string, hosts: readonly string[], colors: HostColors = {}): string =>
-  `${hostDot(host, hosts, colors)} ${host}`
-
-/** The colours after pressing a host chip: that host moves to the next colour. */
-export function cycleHostColor(host: string, hosts: readonly string[], colors: HostColors = {}): HostColors {
-  return { ...colors, [host]: (hostColorIndex(host, hosts, colors) + 1) % HOST_DOTS.length }
-}
-
-// ---------------------------------------------------------------------------------------------
 // A child's card says whose child it is.
 
 export type ParentRef = {
@@ -410,8 +384,61 @@ export function parentRef(snap: BoardSnapshot, f: Family, w: BoardWorkspace): Pa
   }
 }
 
-/** The line under a child card's chips: `⑂ child of web-shop/main 🔵 Local · Checkout redesign`. */
-export function parentLineText(r: ParentRef, hosts: readonly string[], colors: HostColors = {}): string {
-  const who = r.otherHost ? `${r.label} ${hostWithDot(r.otherHost, hosts, colors)}` : r.label
+/** The line under a child card's chips: `⑂ child of web-shop/main on Local · Checkout redesign`. */
+export function parentLineText(r: ParentRef): string {
+  const who = r.otherHost ? `${r.label} on ${r.otherHost}` : r.label
   return `⑂ child of ${who}${r.chat ? ` · ${r.chat}` : ''}`
+}
+
+// ---------------------------------------------------------------------------------------------
+// Card elements: which parts of a card show. The status icon, the bar and tint, and the title
+// always show; everything else can be hidden, for every card in every view.
+
+export type CardElement =
+  | 'project'
+  | 'host'
+  | 'parent'
+  | 'reply'
+  | 'status'
+  | 'children'
+  | 'agent'
+  | 'time'
+  | 'subagents'
+  | 'terminal'
+
+/** Every element, in the order the card draws them and the Card elements section lists them. */
+export const CARD_ELEMENTS: readonly { key: CardElement; label: string }[] = [
+  { key: 'project', label: 'Project / workspace' },
+  { key: 'host', label: 'Machine' },
+  { key: 'parent', label: 'Parent' },
+  { key: 'reply', label: 'Last reply' },
+  { key: 'status', label: 'Status label' },
+  { key: 'children', label: 'Children summary' },
+  { key: 'agent', label: 'Agent kind' },
+  { key: 'time', label: 'Time' },
+  { key: 'subagents', label: 'Subagents' },
+  { key: 'terminal', label: 'Terminal tag' }
+]
+
+/**
+ * What the person hid (element -> true). Stored as hidden rather than shown, so an element added
+ * later shows by default; unknown keys are ignored.
+ */
+export type HiddenElements = Partial<Record<CardElement, boolean>>
+
+export const shows = (hidden: HiddenElements, key: CardElement): boolean => hidden[key] !== true
+
+export const hiddenCount = (hidden: HiddenElements): number => CARD_ELEMENTS.filter((e) => !shows(hidden, e.key)).length
+
+export const toggleElement = (hidden: HiddenElements, key: CardElement, show: boolean): HiddenElements => {
+  const next = { ...hidden }
+  if (show) delete next[key]
+  else next[key] = true
+  return next
+}
+
+/** "Card elements" or "Card elements (3 hidden)": the header button's tooltip. */
+export const elementsTooltip = (hidden: HiddenElements): string => {
+  const n = hiddenCount(hidden)
+  return n ? `Card elements (${n} hidden)` : 'Card elements'
 }

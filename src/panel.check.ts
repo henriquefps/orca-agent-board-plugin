@@ -1,7 +1,7 @@
 // `orca plugin check` (and `orca plugin shot --scenario`) render the panel once per scenario.
 // Every scenario answers the board from invented fixtures, so no real Orca data is shown.
 import { defineCheck } from 'orca/testing'
-import { HOST_COLORS, hostOnlySnapshotFixture, snapshotFixture } from './fixtures.ts'
+import { hostOnlySnapshotFixture, snapshotFixture } from './fixtures.ts'
 import { FLOATING_CLOSED } from './panel.tsx'
 
 const board = () => snapshotFixture()
@@ -35,12 +35,31 @@ export default defineCheck({
     requests: { 'board.snapshot': board },
     persisted: { plugin: { view: 'list', filters: { ...allOff, running: true, hideChildren: false } } }
   },
-  // Two hosts with custom colours (Local 🟣, Build server 🟠), in cards, groups and the host filter.
-  hostColors: {
+  // v0.1.3. Plain host chips (the host name only) in cards, rows, groups and the host filter.
+  hostChips: {
     requests: { 'board.snapshot': board },
-    persisted: { plugin: { view: 'projects', filters: allOff, hostColors: HOST_COLORS } }
+    persisted: { plugin: { view: 'projects', filters: allOff } }
   },
-  // Children shown: "⑂ child of Storefront/main 🔵 Local · Checkout redesign" under a child on
+  // The Card elements section open under the header, with Machine, Last reply and Time hidden:
+  // the cards keep their chips row (project only), the title and the meta row without the time.
+  cardElements: {
+    requests: { 'board.snapshot': board },
+    persisted: {
+      plugin: { view: 'list', filters: { ...allOff, hideChildren: false }, elementsOpen: true, hiddenElements: { host: true, reply: true, time: true } }
+    }
+  },
+  // Everything optional hidden: chips and meta rows collapse; icon, bar and title stay.
+  cardElementsMinimal: {
+    requests: { 'board.snapshot': board },
+    persisted: {
+      plugin: {
+        view: 'list',
+        filters: { ...allOff, hideChildren: false },
+        hiddenElements: { project: true, host: true, parent: true, reply: true, status: true, children: true, agent: true, time: true, subagents: true, terminal: true }
+      }
+    }
+  },
+  // Children shown: "⑂ child of Storefront/main on Local · Checkout redesign" under a child on
   // another host than its parent, and without the host for one on the same host.
   parentLine: {
     requests: { 'board.snapshot': board },
