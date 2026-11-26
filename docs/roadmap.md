@@ -38,6 +38,15 @@ like Orca's right sidebar (about 470 px). Used to settle what the board shows.
   (`workspace.open` with `runtime:<environment id>` rows), and a message when the floating workspace is
   closed.
 
+## v0.1.3 (done)
+
+- Host chips are the plain host name again, everywhere (the v0.1.2 colour circles and their cycling are
+  gone); on cards they are plain badges inside the card's press.
+- **Card elements**: a header button opens a section with one switch per card element (project, machine,
+  parent, last reply, status label, children summary, agent kind, time, subagents, terminal tag) and
+  Show all; the choice applies to every card in every view and persists. Rows with nothing left collapse.
+  Same capabilities as v0.1.2.
+
 ## Later
 
 - Drop the CLI and the session-store read as Orca's host API grows (see the gaps in

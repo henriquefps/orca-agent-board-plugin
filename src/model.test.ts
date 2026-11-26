@@ -3,10 +3,11 @@
 import { assert, test } from 'orca/testing'
 import { snapshotFixture } from './fixtures.ts'
 import {
-  cycleHostColor,
-  HOST_DOTS,
-  hostDot,
-  hostWithDot,
+  CARD_ELEMENTS,
+  elementsTooltip,
+  hiddenCount,
+  shows,
+  toggleElement,
   parentLineText,
   parentRef,
   cardEmphasis,
@@ -173,16 +174,24 @@ test('status bar count: children that need you count once, through their parent,
   assert.ok(everyAgent > chip)
 })
 
-test('host colours: host order by default, a cycle per press, custom choices by host name', () => {
-  const hosts = ['Local', 'Build server', 'Mac']
-  assert.deepEqual(hosts.map((h) => hostDot(h, hosts)), ['🔵', '🟢', '🟣'])
-  assert.equal(hostDot('Unknown', hosts), '🔵')
-  let c = cycleHostColor('Build server', hosts)
-  assert.deepEqual(c, { 'Build server': 2 })
-  assert.equal(hostWithDot('Build server', hosts, c), '🟣 Build server')
-  for (let i = 0; i < 6; i++) c = cycleHostColor('Build server', hosts, c)
-  assert.equal(hostDot('Build server', hosts, c), '🔵', 'wraps after ⚪')
-  assert.deepEqual(HOST_DOTS, ['🔵', '🟢', '🟣', '🟠', '🔴', '🟡', '🟤', '⚪'])
+test('card elements: all shown by default, hidden by key, Show all is an empty map', () => {
+  assert.deepEqual(
+    CARD_ELEMENTS.map((e) => e.key),
+    ['project', 'host', 'parent', 'reply', 'status', 'children', 'agent', 'time', 'subagents', 'terminal']
+  )
+  assert.ok(CARD_ELEMENTS.every((e) => shows({}, e.key)))
+  assert.equal(elementsTooltip({}), 'Card elements')
+  let h = toggleElement({}, 'host', false)
+  h = toggleElement(h, 'time', false)
+  h = toggleElement(h, 'reply', false)
+  assert.deepEqual(h, { host: true, time: true, reply: true })
+  assert.equal(shows(h, 'host'), false)
+  assert.equal(shows(h, 'project'), true)
+  assert.equal(hiddenCount(h), 3)
+  assert.equal(elementsTooltip(h), 'Card elements (3 hidden)')
+  assert.deepEqual(toggleElement(h, 'time', true), { host: true, reply: true })
+  // Unknown keys (an element a later version removed) do not count.
+  assert.equal(hiddenCount({ ...h, gone: true } as never), 3)
 })
 
 test('parent line: project/workspace, the host only when it differs, the parent’s latest chat', () => {
@@ -191,9 +200,9 @@ test('parent line: project/workspace, the host only when it differs, the parent�
   const ws = (name: string) => snap.workspaces.find((w) => w.name === name)!
   const pay = parentRef(snap, f, ws('payment-step'))
   assert.ok(pay)
-  assert.equal(parentLineText(pay, snap.hosts), '⑂ child of Storefront/main 🔵 Local · Checkout redesign')
-  assert.equal(parentLineText(pay, snap.hosts, { Local: 4 }), '⑂ child of Storefront/main 🔴 Local · Checkout redesign')
+  assert.equal(parentLineText(pay), '⑂ child of Storefront/main on Local · Checkout redesign')
+  assert.ok(!/[\u{1F300}-\u{1FAFF}\u26AA]/u.test(parentLineText(pay)), 'no colour emoji')
   const cart = parentRef(snap, f, ws('cart-totals'))
-  assert.equal(cart && parentLineText(cart, snap.hosts), '⑂ child of Storefront/main · Checkout redesign')
+  assert.equal(cart && parentLineText(cart), '⑂ child of Storefront/main · Checkout redesign')
   assert.equal(parentRef(snap, f, ws('key-rotation')), null)
 })

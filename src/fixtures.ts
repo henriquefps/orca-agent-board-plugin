@@ -1,7 +1,7 @@
 // Invented Orca answers for tests, checks and screenshots. Hosts, projects, people and messages
 // are made up: two machines ("Local", "Build server"), three projects. The new cases of v0.1.2:
 // children on another host than their parent (payment-step, receipt-email), a terminal agent on
-// another host (receipt-email), and two hosts with custom colours (HOST_COLORS).
+// another host (receipt-email).
 import { NOTICE_NO_CLI, type BoardSnapshot } from './model.ts'
 import type { CliHostData } from './sources.ts'
 import { floatingWorkspace, hostsFromEnvironments, reposFromCli, snapshotFromCli, snapshotFromHost } from './sources.ts'
@@ -10,8 +10,6 @@ const MIN = 60_000
 
 /** The paired server's environment id: `workspace.list` names its rows `runtime:<id>`. */
 export const BUILD_ENV_ID = 'env-1'
-/** Both hosts recoloured: Local purple (2), Build server orange (3). */
-export const HOST_COLORS = { Local: 2, 'Build server': 3 }
 
 export function cliFixture(now = Date.now()): { environments: unknown; data: CliHostData[]; floatingShows: unknown[] } {
   const environments = { environments: [{ id: BUILD_ENV_ID, name: 'Build server' }] }

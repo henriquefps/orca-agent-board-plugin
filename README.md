@@ -12,8 +12,8 @@ work back. The built-in sidebar shows workspaces; Agent Board shows **agents**:
 - **One project per repository.** Clones of the same Git remote on different machines are one project.
 - **What needs you first.** Needs you, failed, running and unread each have their own icon, colour and
   label; finished and seen agents fade back.
-- **A colour per machine.** Every host name starts with a coloured dot (🔵 🟢 🟣 🟠 🔴 🟡 🟤 ⚪); press a
-  host chip to change that machine's colour.
+- **Cards your way.** The **Card elements** button in the header picks which parts of a card show (project,
+  machine, parent, last reply, status label, children, agent kind, time, subagents, terminal tag).
 - **Everything opens here.** Agents on other machines open in this computer's Orca window.
 - **Three views:** List (agents by last activity), Projects (grouped by repository, children nested under
   their parent) and Tree (the full parent/child chain across hosts and projects).
@@ -62,26 +62,32 @@ On Linux the CLI is `orca-ide` outside Orca's own terminals.
 | `settings:own` | The three settings below. |
 
 The status bar item and the panel ↔ worker requests need no capability. Panel state (view, filters, host,
-collapsed groups) is kept by Orca for the plugin and needs no `storage:own`.
+card elements, collapsed groups) is kept by Orca for the plugin and needs no `storage:own`.
 
 ## Features
 
-- **Header:** "updated Xs ago", the host filter (All hosts or one host, each with its colour) and Refresh.
+- **Header:** "updated Xs ago", the host filter (All hosts or one host), **Card elements** and Refresh.
+- **Card elements** (the layers button, next to Refresh): opens a section under the header with one
+  switch per card element, all on by default: Project / workspace, Machine (the host chip), Parent (the
+  "child of …" line), Last reply ("Agent: …" / "You: …"), Status label (the badge text), Children summary,
+  Agent kind, Time, Subagents and Terminal tag. **Show all** turns them all back on; the button again, or
+  the close button, closes the section. The status icon, the left bar and tint and the title always show.
+  The choice applies to every card in every view and is remembered across reloads and Orca restarts.
+  When some are hidden the button is accent-toned and its tooltip says how many ("Card elements (3
+  hidden)"). A row whose elements are all hidden goes away (no empty chip line or meta row).
 - **Views:** List (default), Projects and Tree, and search over titles, projects, workspaces and messages.
 - **Filters**, matched per agent, not per workspace: **Needs me** (waiting, blocked or unread, or the most
   recent chat of a workspace whose child waits), **Running**, **Unread**, **Hide children** (List only, on
   by default) and **Hide idle** (workspaces without an open agent; on by default). Chip counts count agents.
-- **Agent cards:** project/workspace and host chips first; for a child workspace, a muted line
-  `⑂ child of <project>/<workspace>`, the parent's host (only when it is another machine) and
+- **Agent cards:** project/workspace and host chips first (plain badges with the host name; pressing
+  them opens the agent like the rest of the card); for a child workspace, a muted line
+  `⑂ child of <project>/<workspace>`, `on <the parent's host>` (only when it is another machine) and
   `· <the parent's most recent chat>`, which opens the parent when pressed; then the status icon (an
   animated spinner while running) beside the title, the card's only status icon; "Agent: <last reply>";
   then the status badge (text only), the children summary (on the workspace's most recent chat only: how
   many descendant workspaces, and how many of them need you, failed, are running or unread, each in its
-  tone), agent kind, relative time and subagents. The parent line shows in every view.
-- **Host colours:** each host chip starts with a coloured circle, by the host's place in the host list
-  (this computer 🔵, then 🟢 🟣 🟠 🔴 🟡 🟤 ⚪). Pressing a chip gives that machine the next colour; the
-  choice is remembered by host name and used on cards, workspace rows, project groups, the host filter
-  and parent lines. The chip is a small outline button; the rest of the card still opens the agent.
+  tone), agent kind, relative time, subagents and "terminal" for a terminal agent. The parent line shows
+  in every view. Any of these can be hidden with **Card elements**.
 - **One status per card**, most urgent first, with the prototype's signals (left bar, card surface, icon,
   title weight, badge), all in Orca's theme tones:
   - needs you: warning bar, tinted and outlined card, warning icon, semibold title, warning badge. The
@@ -104,7 +110,7 @@ collapsed groups) is kept by Orca for the plugin and needs no `storage:own`.
   Windows/Linux) to open it, then click the chat again." (dismissible).
 - **Status bar:** "N need you", hidden at zero: the List's **Needs me** chip with the default filters, on
   every host (children count once, through their parent's summary). Pressing it shows the panel.
-- View, filters, host filter, host colours, collapsed groups and the last open failure (until dismissed)
+- View, filters, host filter, card elements, collapsed groups and the last open failure (until dismissed)
   are remembered.
 
 ## Settings
