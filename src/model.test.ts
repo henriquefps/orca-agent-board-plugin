@@ -3,6 +3,12 @@
 import { assert, test } from 'orca/testing'
 import { snapshotFixture } from './fixtures.ts'
 import {
+  cycleHostColor,
+  HOST_DOTS,
+  hostDot,
+  hostWithDot,
+  parentLineText,
+  parentRef,
   cardEmphasis,
   cardStatus,
   childSummary,
@@ -165,4 +171,29 @@ test('status bar count: children that need you count once, through their parent,
   let everyAgent = 0
   for (const w of s.workspaces) for (const a of w.agents) if (a.state === 'waiting' || a.state === 'blocked' || a.unread || (w.unread && w.agents[0] === a)) everyAgent++
   assert.ok(everyAgent > chip)
+})
+
+test('host colours: host order by default, a cycle per press, custom choices by host name', () => {
+  const hosts = ['Local', 'Build server', 'Mac']
+  assert.deepEqual(hosts.map((h) => hostDot(h, hosts)), ['🔵', '🟢', '🟣'])
+  assert.equal(hostDot('Unknown', hosts), '🔵')
+  let c = cycleHostColor('Build server', hosts)
+  assert.deepEqual(c, { 'Build server': 2 })
+  assert.equal(hostWithDot('Build server', hosts, c), '🟣 Build server')
+  for (let i = 0; i < 6; i++) c = cycleHostColor('Build server', hosts, c)
+  assert.equal(hostDot('Build server', hosts, c), '🔵', 'wraps after ⚪')
+  assert.deepEqual(HOST_DOTS, ['🔵', '🟢', '🟣', '🟠', '🔴', '🟡', '🟤', '⚪'])
+})
+
+test('parent line: project/workspace, the host only when it differs, the parent’s latest chat', () => {
+  const snap = snapshotFixture(NOW)
+  const f = family(snap.workspaces)
+  const ws = (name: string) => snap.workspaces.find((w) => w.name === name)!
+  const pay = parentRef(snap, f, ws('payment-step'))
+  assert.ok(pay)
+  assert.equal(parentLineText(pay, snap.hosts), '⑂ child of Storefront/main 🔵 Local · Checkout redesign')
+  assert.equal(parentLineText(pay, snap.hosts, { Local: 4 }), '⑂ child of Storefront/main 🔴 Local · Checkout redesign')
+  const cart = parentRef(snap, f, ws('cart-totals'))
+  assert.equal(cart && parentLineText(cart, snap.hosts), '⑂ child of Storefront/main · Checkout redesign')
+  assert.equal(parentRef(snap, f, ws('key-rotation')), null)
 })

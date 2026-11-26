@@ -115,6 +115,14 @@
   .children .ico { width: 12px; height: 12px; }
   .chip .ico { width: 12px; height: 12px; margin-right: 3px; }
   .chip.c-needs .ico { color: #ff8a3d; } .chip.c-running .ico { color: var(--working); } .chip.c-unread .ico { color: var(--waiting); }
+
+  .host { background: #2a2a2a; color: #d0d0d0; cursor: pointer; }
+  .host:hover { background: #333; }
+  .agent .parent { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); margin: -1px 0 5px; white-space: nowrap; overflow: hidden; cursor: pointer; }
+  .agent .parent:hover { color: var(--text); }
+  .agent .parent b { color: #cfcfcf; font-weight: 500; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; }
+  .agent .parent .pchat { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+  .agent .parent .ico { width: 12px; height: 12px; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -141,11 +149,14 @@
 <script>
 const S = JSON.parse(localStorage.getItem('ab-state') || '{}');
 const state = Object.assign({ view: 'list', host: '', q: '', closed: {} }, S);
+state.hostColors = Object.assign({}, S.hostColors);
 state.filters = Object.assign({ hideIdle: true, hideChildren: true }, S.filters);
-const save = () => localStorage.setItem('ab-state', JSON.stringify({ view: state.view, host: state.host, filters: state.filters, closed: state.closed }));
+const save = () => localStorage.setItem('ab-state', JSON.stringify({ view: state.view, host: state.host, filters: state.filters, closed: state.closed, hostColors: state.hostColors }));
 let data = null;
 
-const hostCls = (h) => `h${Math.max(0, (data?.hosts || []).indexOf(h)) % 5}`;
+const DOTS = ['🔵', '🟢', '🟣', '🟠', '🔴', '🟡', '🟤', '⚪'];
+const hostDot = (h) => DOTS[(state.hostColors[h] ?? Math.max(0, (data?.hosts || []).indexOf(h))) % DOTS.length];
+const hostChip = (h) => `<span class="host" data-host="${esc(h)}" title="Click to change this machine's colour">${hostDot(h)} ${esc(h)}</span>`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function ago(ms) {
   if (!ms) return '—';
@@ -185,8 +196,10 @@ function cardStatus(a, w) {
 }
 
 let kids = new Map();
+let wsById = new Map();
 function indexChildren() {
   kids = new Map();
+  wsById = new Map(data.workspaces.map((w) => [w.id, w]));
   for (const w of data.workspaces) if (w.parentId) (kids.get(w.parentId) || kids.set(w.parentId, []).get(w.parentId)).push(w);
 }
 function descendants(w, out = []) {
@@ -267,16 +280,26 @@ function childChip(w) {
   return `<span class="children" title="${tip}">${icon('branch')} ${s.count} ${s.count > 1 ? 'children' : 'child'}</span>${parts.join('')}`;
 }
 
+// A child workspace's card says so, and who the parent is (click opens the parent).
+function parentLine(w) {
+  const p = w.parentId && wsById.get(w.parentId);
+  if (!p) return '';
+  const chat = (p.agents[0] && (p.agents[0].title || p.agents[0].prompt)) || '';
+  const label = `${data.projects[p.project] || p.repo}/${p.name}`;
+  return `<div class="parent" data-open="${esc(p.id)}" title="Open the parent in Orca">${icon('branch')}<span>child of</span><b>${esc(label)}</b>${p.host !== w.host ? `<span class="pdot">${hostDot(p.host)} ${esc(p.host)}</span>` : ''}${chat ? `<span class="pchat">· ${esc(chat)}</span>` : ''}</div>`;
+}
+
 function agentCard(a, w) {
   const [st, ic, label] = cardStatus(a, w);
   const title = a.title || a.prompt || '(untitled)';
   const msg = a.last ? `<b>Agent:</b> ${esc(a.last)}` : a.prompt ? `<b>You:</b> ${esc(a.prompt)}` : '';
   return `<div class="agent st-${st}" data-open="${esc(w.id)}" title="Open in Orca">
-    <div class="where"><span class="tag ws">${w.floating ? 'Floating workspace' : `${esc(data.projects[w.project] || w.repo)}/${esc(w.name)}`}</span><span class="host ${hostCls(w.host)}">${w.host}</span></div>
+    <div class="where"><span class="tag ws">${w.floating ? 'Floating workspace' : `${esc(data.projects[w.project] || w.repo)}/${esc(w.name)}`}</span>${hostChip(w.host)}</div>
+    ${parentLine(w)}
     <div class="t">${icon(ic, `st-${st} ${st === 'working' ? 'spin' : ''}`)}<span class="title">${esc(title)}</span></div>
     ${msg ? `<div class="msg">${msg}</div>` : ''}
     <div class="meta">
-      <span class="badge ${st}">${st === 'done' ? '' : icon(ic, st === 'working' ? 'spin' : '')}${label}</span>
+      <span class="badge ${st}">${label}</span>
       ${latestOf(w) === a ? childChip(w) : ''}
       <span>${esc(a.agent || '')}</span>·<span>${ago(a.updatedAt)}</span>
       ${a.subagents ? `·<span>${a.subagents} subagent${a.subagents > 1 ? 's' : ''}</span>` : ''}
@@ -293,7 +316,7 @@ function wsBlock(w, depth, opts = {}) {
     <div class="ws-h" data-open="${esc(w.id)}" title="Open workspace in Orca">
       ${w.unread ? '<span class="dot unread" title="unread"></span>' : ''}
       <span>${w.isMain ? '⌂' : '⑂'}</span><span class="wname">${esc(opts.showProject ? `${data.projects[w.project] || w.repo}/` : '')}${esc(w.name)}</span>
-      <span class="host ${hostCls(w.host)}">${w.host}</span>
+      ${hostChip(w.host)}
       <span class="right">${prs}${w.kanban && w.kanban !== 'in-progress' ? `<span class="tag k-${w.kanban}">${w.kanban}</span>` : ''}${w.pinned ? '<span title="pinned">📌</span>' : ''}<span>${ago(w.lastAt)}</span></span>
     </div>
     ${parent}${agents}
@@ -345,7 +368,7 @@ function render() {
       const attention = list.filter((w) => w.agents.some((a) => agentNeedsMe(a, w))).length;
       html += `<div class="group-h ${closed ? 'closed' : ''}" data-toggle="${esc(p)}">
         <span class="caret">▾</span><span class="name">${esc(data.projects[p] || p)}</span>
-        ${hosts.map((h) => `<span class="host ${hostCls(h)}">${h}</span>`).join('')}
+        ${hosts.map(hostChip).join('')}
         <span class="right">${attention ? `<span class="dot unread"></span>` : ''}<span>${list.length} ws</span>·<span>${ago(last)}</span></span>
       </div>`;
       if (closed) continue;
@@ -398,6 +421,8 @@ document.addEventListener('click', (e) => {
   const v = e.target.closest('#views button'); if (v) { state.view = v.dataset.v; save(); return render(); }
   const f = e.target.closest('.chip'); if (f) { state.filters[f.dataset.f] = !state.filters[f.dataset.f]; save(); return render(); }
   const g = e.target.closest('[data-toggle]'); if (g) { const k = g.dataset.toggle; state.closed[k] = !state.closed[k]; save(); return render(); }
+  const hc = e.target.closest('[data-host]');
+  if (hc) { const h = hc.dataset.host; state.hostColors[h] = (DOTS.indexOf(hostDot(h)) + 1) % DOTS.length; save(); return render(); }
   const o = e.target.closest('[data-open]'); if (o) return openWs(o.dataset.open);
 });
 document.getElementById('host').addEventListener('change', (e) => { state.host = e.target.value; save(); render(); });

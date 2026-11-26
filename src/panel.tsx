@@ -38,11 +38,15 @@ import {
   cardStatus,
   cardEmphasis,
   childSummary,
+  cycleHostColor,
   DEFAULT_FILTERS,
   family,
   filterCounts,
+  hostWithDot,
   isLatest,
   listItems,
+  parentLineText,
+  parentRef,
   projectGroups,
   treeOf,
   visibleWorkspaces,
@@ -54,6 +58,7 @@ import {
   type Family,
   type FilterKey,
   type Filters,
+  type HostColors,
   type TreeNode,
   type ViewName,
   type VisibleWorkspace
@@ -65,7 +70,14 @@ import './protocol.ts'
 const snapshot = atom<BoardSnapshot | null>(null)
 const loadError = atom<string | null>(null)
 const loading = atom(false)
-const openMessage = atom<{ tone: Tone; text: string } | null>(null)
+/** "Opening …" while an open runs. */
+const opening = atom<string | null>(null)
+/**
+ * Why the last open failed, until dismissed or the next open succeeds (kept by Orca, so a check
+ * scenario can show it).
+ */
+export type OpenNotice = { tone: 'warning' | 'danger'; text: string }
+const openNotice = atom<OpenNotice | null>('openNotice', null, { persist: 'plugin' })
 const query = atom('')
 /** How many agent cards to draw before "Show more" (Orca refuses renders past 5000 nodes). */
 export const PAGE = 60
@@ -77,6 +89,12 @@ const view = atom<ViewName | null>('view', null, { persist: 'plugin' })
 const filters = atom<Filters>('filters', DEFAULT_FILTERS, { persist: 'plugin' })
 const hostFilter = atom('host', '', { persist: 'plugin' })
 const closedGroups = atom<Record<string, boolean>>('closedGroups', {}, { persist: 'plugin' })
+/** Colours the person picked per host name (index in HOST_DOTS); the rest follow the host order. */
+const hostColors = atom<HostColors>('hostColors', {}, { persist: 'plugin' })
+
+/** What the panel says when the floating workspace is closed (plugins cannot open it). */
+export const FLOATING_CLOSED =
+  'The floating workspace is closed. Press ⌘⌥A (Ctrl+Alt+A on Windows/Linux) to open it, then click the chat again.'
 
 const VIEWS: readonly { value: ViewName; label: string }[] = [
   { value: 'list', label: 'List' },
@@ -142,12 +160,17 @@ async function load(force = false): Promise<void> {
 }
 
 async function open(workspaceId: string, agentId?: string, label?: string): Promise<void> {
-  set(openMessage, { tone: 'neutral', text: `Opening ${label ?? 'workspace'}…` })
+  set(opening, `Opening ${label ?? 'workspace'}…`)
+  set(openNotice, null)
   try {
     const r = await plugin.request('board.open', agentId ? { workspaceId, agentId } : { workspaceId })
-    set(openMessage, r.ok ? null : { tone: 'danger', text: `Could not open ${label ?? 'it'}: ${r.error ?? 'unknown error'}` })
+    if (r.ok) return
+    if (r.code === 'floating-closed') set(openNotice, { tone: 'warning', text: FLOATING_CLOSED })
+    else set(openNotice, { tone: 'danger', text: `Could not open ${label ?? 'it'}: ${r.error ?? 'unknown error'}` })
   } catch (e) {
-    set(openMessage, { tone: 'danger', text: `Could not open ${label ?? 'it'}: ${(e as Error).message}` })
+    set(openNotice, { tone: 'danger', text: `Could not open ${label ?? 'it'}: ${(e as Error).message}` })
+  } finally {
+    set(opening, null)
   }
 }
 
@@ -204,15 +227,42 @@ function StatusIcon({ look, label, onPress }: { look: StatusLook; label: string;
   return <IconButton icon={look.icon} label={label} tooltip={label} variant="ghost" tone={look.iconTone} size="xs" onPress={onPress} />
 }
 
+/** Text only: the card's one status icon sits beside the title. */
 function StatusBadge({ look, label }: { look: StatusLook; label: string }): OrcaNode {
   if (!look.badge) return <Text size="xs" muted>{label}</Text>
-  const badge = <Badge tone={look.badge}>{label}</Badge>
-  if (look.icon !== 'spinner') return badge
+  return <Badge tone={look.badge}>{label}</Badge>
+}
+
+/**
+ * A host's chip: its colour dot and name. A Badge cannot be pressed, so it is the smallest outline
+ * Button; pressing it gives that machine the next colour, everywhere it shows.
+ */
+function HostChip({ snap, host }: { snap: BoardSnapshot; host: string }): OrcaNode {
+  const colors = read(hostColors)
   return (
-    <Row gap="xs" align="center">
-      <Spinner label={label} labelHidden />
-      {badge}
-    </Row>
+    <Button
+      size="xs"
+      variant="outline"
+      tone="neutral"
+      tooltip="Change this machine's colour"
+      onPress={() => update(hostColors, (c) => cycleHostColor(host, snap.hosts, c))}
+    >
+      {hostWithDot(host, snap.hosts, colors)}
+    </Button>
+  )
+}
+
+/** Under a child card's chips: whose child it is. Pressing it opens the parent. */
+function ParentLine({ snap, fam, w }: { snap: BoardSnapshot; fam: Family; w: VisibleWorkspace }): OrcaNode {
+  const r = parentRef(snap, fam, w)
+  if (!r) return null
+  const parent = r.parent
+  return (
+    <Box paddingX="sm">
+      <Text size="xs" muted truncate>
+        <Link onPress={() => open(parent.id, parent.agents[0]?.id, r.label)}>{parentLineText(r, snap.hosts, read(hostColors))}</Link>
+      </Text>
+    </Box>
   )
 }
 
@@ -230,10 +280,11 @@ function AgentCard({ snap, fam, a, w }: { snap: BoardSnapshot; fam: Family; a: B
       {look.bar ? <Box width={BAR_WIDTH} shrink={false} border={look.bar} background={look.bar} radius="full" /> : null}
       <Box grow gap="none">
         {/* Project first, always (the user's wireframe), then the icon beside the title. */}
-        <Box direction="row" gap="xs" wrap paddingX="sm" paddingY="xs">
+        <Box direction="row" gap="xs" wrap align="center" paddingX="sm" paddingY="xs">
           <Badge>{where}</Badge>
-          <Badge>{w.host}</Badge>
+          <HostChip snap={snap} host={w.host} />
         </Box>
+        <ParentLine snap={snap} fam={fam} w={w} />
         <Box direction="row" align="start">
           {/* Outside the ListItem: a pressable ListItem cannot hold an IconButton. */}
           <Box shrink={false} paddingX="xs" paddingY="xs">
@@ -279,18 +330,25 @@ function WorkspaceBlock({ snap, fam, node, showProject, budget }: { snap: BoardS
     <Box key={w.id} direction="row">
       {node.depth ? <Box width={Math.min(node.depth, 6) * 14} shrink={false} /> : null}
       <Box grow gap="xs">
-        <List label={name}>
-          <ListItem icon={w.floating ? 'layers' : w.isMain ? 'folder' : 'branch'} onPress={() => open(w.id, undefined, name)}>
-            <Row gap="xs" align="center" wrap>
-              <Text weight="medium" truncate>{name}</Text>
-              <Badge>{w.host}</Badge>
-              {w.unread ? <Badge tone="warning">unread</Badge> : null}
-              {w.kanban && w.kanban !== 'in-progress' ? <Badge>{w.kanban}</Badge> : null}
-              {w.pinned ? <Badge>pinned</Badge> : null}
-              <Text size="xs" muted><RelativeTime at={w.lastAt} format="short" muted /></Text>
-            </Row>
-          </ListItem>
-        </List>
+        {/* The host chip sits outside the ListItem: a pressable ListItem cannot hold a Button. */}
+        <Box direction="row" align="center" gap="xs">
+          <Box grow>
+            <List label={name}>
+              <ListItem icon={w.floating ? 'layers' : w.isMain ? 'folder' : 'branch'} onPress={() => open(w.id, undefined, name)}>
+                <Row gap="xs" align="center" wrap>
+                  <Text weight="medium" truncate>{name}</Text>
+                  {w.unread ? <Badge tone="warning">unread</Badge> : null}
+                  {w.kanban && w.kanban !== 'in-progress' ? <Badge>{w.kanban}</Badge> : null}
+                  {w.pinned ? <Badge>pinned</Badge> : null}
+                  <Text size="xs" muted><RelativeTime at={w.lastAt} format="short" muted /></Text>
+                </Row>
+              </ListItem>
+            </List>
+          </Box>
+          <Box shrink={false}>
+            <HostChip snap={snap} host={w.host} />
+          </Box>
+        </Box>
         {node.foreignParent ? <Text size="xs" muted>{`↳ child of ${node.foreignParent}`}</Text> : null}
         {w.prs.length ? (
           <Row gap="sm" wrap>
@@ -351,13 +409,14 @@ function Board({ snap, q }: { snap: BoardSnapshot; q: BoardQuery }): OrcaNode {
     )
   } else {
     const closed = read(closedGroups)
+    const colors = read(hostColors)
     body = (
       <Stack gap="xs">
         {projectGroups(snap, fam, ws).map((g) => (
           <Collapsible
             key={g.key}
             title={g.name}
-            description={[g.hosts.join(', '), plural(g.nodes.length, 'workspace', 'workspaces'), g.attention ? `${g.attention} need${g.attention === 1 ? 's' : ''} you` : ''].filter(Boolean).join(' · ')}
+            description={[g.hosts.map((h) => hostWithDot(h, snap.hosts, colors)).join(', '), plural(g.nodes.length, 'workspace', 'workspaces'), g.attention ? `${g.attention} need${g.attention === 1 ? 's' : ''} you` : ''].filter(Boolean).join(' · ')}
             open={!closed[g.key]}
             onChange={(isOpen) => update(closedGroups, (c) => ({ ...c, [g.key]: !isOpen }))}
           >
@@ -395,8 +454,10 @@ export default function Panel(): OrcaNode {
   }
   const fam = snap ? family(snap.workspaces) : null
   const err = read(loadError)
-  const msg = read(openMessage)
-  const hostOptions = [{ value: ALL_HOSTS, label: 'All hosts' }, ...(snap?.hosts ?? []).map((h) => ({ value: h, label: h }))]
+  const busy = read(opening)
+  const notice = read(openNotice)
+  const colors = read(hostColors)
+  const hostOptions = [{ value: ALL_HOSTS, label: 'All hosts' }, ...(snap?.hosts ?? []).map((h) => ({ value: h, label: hostWithDot(h, snap?.hosts ?? [], colors) }))]
   const content = (
     <Stack gap="sm">
       <Input
@@ -435,7 +496,15 @@ export default function Panel(): OrcaNode {
       {err ? <Callout tone="danger" title="Could not read Orca">{err}</Callout> : null}
       {snap?.notices.map((n) => <Callout key={n} tone="warning" icon="info">{n}</Callout>)}
       {snap?.errors.length ? <Callout tone="danger" title="Some hosts could not be read">{snap.errors.join('\n')}</Callout> : null}
-      {msg ? <Text size="xs" tone={msg.tone === 'neutral' ? undefined : msg.tone} muted={msg.tone === 'neutral'}>{msg.text}</Text> : null}
+      {busy ? <Text size="xs" muted>{busy}</Text> : null}
+      {notice ? (
+        <Callout tone={notice.tone} icon={notice.tone === 'danger' ? 'error' : 'info'}>
+          <Row justify="between" align="start" gap="xs">
+            <Text size="sm">{notice.text}</Text>
+            <IconButton icon="close" label="Dismiss" tooltip="Dismiss" variant="ghost" size="xs" onPress={() => set(openNotice, null)} />
+          </Row>
+        </Callout>
+      ) : null}
       <Tabs
         label="View"
         value={q.view}

@@ -204,20 +204,26 @@ createServer(async (req, res) => {
         res.writeHead(200, { 'content-type': 'application/json' });
         return res.end(JSON.stringify({ error: 'the CLI cannot open the floating workspace; use its shortcut in Orca' }));
       }
-      let r = await orca(['worktree', 'activate', '--environment', env, '--worktree', selector]);
-      let how = 'worktree activate';
-      if (r.error) {
-        // Fallback: bring one of the workspace's live terminals forward.
-        const list = await orca(['terminal', 'list', '--environment', env, '--worktree', selector]);
-        const terms = (list.result?.terminals || []).filter((t) => t.connected !== false && t.handle);
-        const pick = terms.find((t) => t.agentIdentity) || terms[0];
-        if (pick) {
-          r = await orca(['terminal', 'switch', '--environment', env, '--terminal', pick.handle]);
-          how = 'terminal switch';
-        }
+      // `worktree activate --environment <server>` opens the workspace in that server's own window.
+      // For another machine, switch THIS machine's window to one of the workspace's terminals instead
+      // (`terminal switch --environment` navigates the local desktop). Chat-only remote workspaces
+      // have no terminal: the CLI cannot show them here (the plugin uses workspace.open for that).
+      let r;
+      let how;
+      const remote = env !== 'local';
+      const list = await orca(['terminal', 'list', '--environment', env, '--worktree', selector]);
+      const terms = (list.result?.terminals || []).filter((t) => t.connected !== false && t.handle);
+      const pick = terms.find((t) => t.agentIdentity) || terms[0];
+      if (remote) {
+        if (pick) { r = await orca(['terminal', 'switch', '--environment', env, '--terminal', pick.handle]); how = 'terminal switch'; }
+        else { r = { error: 'this remote workspace has only chats; the prototype cannot show it in this window (the plugin can)' }; how = 'none'; }
+      } else {
+        r = await orca(['worktree', 'activate', '--environment', env, '--worktree', selector]);
+        how = 'worktree activate';
+        if (r.error && pick) { r = await orca(['terminal', 'switch', '--environment', env, '--terminal', pick.handle]); how = 'terminal switch'; }
       }
       console.log(`open ${env} ${selector} via ${how}: ${r.error || 'ok'}`);
-      res.writeHead(r.error ? 500 : 200, { 'content-type': 'application/json' });
+      res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ ...r, how }));
     }
     res.writeHead(404); res.end();
