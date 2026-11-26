@@ -59,7 +59,7 @@ test('builds the board from the CLI: hosts, projects, parents, floating chats', 
   assert.equal(calls.filter((c) => c[0] === 'worktree' && c[1] === 'ps').length, 2)
   // The status bar shows the agents that need the person.
   const bar = worker.host.callsOf('statusBar.update').at(-1) as { text: string; visible: boolean }
-  assert.deepEqual([bar.text, bar.visible], ['4 need you', true])
+  assert.deepEqual([bar.text, bar.visible], ['2 need you', true])
   assert.deepEqual(worker.refusals, [])
 })
 

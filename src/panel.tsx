@@ -36,7 +36,7 @@ import {
 import {
   AGENT_FILTERS,
   cardStatus,
-  childNeedsMe,
+  cardEmphasis,
   childSummary,
   DEFAULT_FILTERS,
   family,
@@ -87,14 +87,34 @@ const isView = (v: unknown): v is ViewName => v === 'list' || v === 'projects' |
 const ALL_HOSTS = '*'
 
 // -- Status look: one per card, most urgent first -------------------------------------------------
+// The prototype's four signals per card, with Orca's components and theme tones: a left bar, the
+// card surface, a toned icon before the title, and the title weight; plus the status badge.
 
-export const STATUS_LOOK: Record<CardStatus, { icon: IconName; tone: Tone }> = {
-  waiting: { icon: 'warning', tone: 'warning' },
-  failed: { icon: 'error', tone: 'danger' },
-  working: { icon: 'activity', tone: 'accent' },
-  unread: { icon: 'bell', tone: 'warning' },
-  done: { icon: 'check', tone: 'neutral' }
+export type StatusLook = {
+  /** Tone of the narrow bar left of the card; null draws none. */
+  bar: Tone | null
+  /** Card surface: tinted background and/or a toned outline. */
+  background: Tone | 'none'
+  border: Tone | false
+  /** Icon before the title; 'spinner' draws the animated Spinner. */
+  icon: IconName | 'spinner'
+  iconTone: Tone
+  /** Title weight: semibold for anything that wants a look, regular for done. */
+  strong: boolean
+  /** Badge tone; null draws the label as quiet muted text. */
+  badge: Tone | null
 }
+
+export const STATUS_LOOK: Record<CardStatus, StatusLook> = {
+  waiting: { bar: 'warning', background: 'warning', border: 'warning', icon: 'warning', iconTone: 'warning', strong: true, badge: 'warning' },
+  failed: { bar: 'danger', background: 'none', border: 'danger', icon: 'error', iconTone: 'danger', strong: true, badge: 'danger' },
+  working: { bar: 'accent', background: 'none', border: false, icon: 'spinner', iconTone: 'accent', strong: true, badge: 'accent' },
+  unread: { bar: 'warning', background: 'none', border: false, icon: 'bell', iconTone: 'warning', strong: true, badge: 'warning' },
+  done: { bar: null, background: 'none', border: false, icon: 'check', iconTone: 'neutral', strong: false, badge: null }
+}
+
+/** Narrowest bar the API draws: a 3 px Box, toned outline over a tone tint, full card height. */
+export const BAR_WIDTH = 3
 
 const FILTER_ICON: Record<FilterKey, IconName> = {
   needsMe: 'warning',
@@ -166,55 +186,81 @@ function ChildBadges({ fam, w }: { fam: Family; w: VisibleWorkspace }): OrcaNode
   const s = childSummary(fam, w)
   if (!s.count) return null
   return [
-    <Badge key="n">{plural(s.count, 'child', 'children')}</Badge>,
+    <Text key="n" size="xs" muted>{plural(s.count, 'child', 'children')}</Text>,
     s.waiting ? <Badge key="w" tone="warning">{s.waiting === 1 ? '1 child needs you' : `${s.waiting} children need you`}</Badge> : null,
     s.failed ? <Badge key="f" tone="danger">{`${s.failed} failed`}</Badge> : null,
-    s.working ? <Badge key="r" tone="accent">{`${s.working} running`}</Badge> : null,
+    s.working ? (
+      <Row key="r" gap="xs" align="center">
+        <Spinner label="Children running" labelHidden />
+        <Badge tone="accent">{`${s.working} running`}</Badge>
+      </Row>
+    ) : null,
     s.unread ? <Badge key="u" tone="warning">{`${s.unread} unread`}</Badge> : null
   ]
 }
 
+function StatusIcon({ look, label, onPress }: { look: StatusLook; label: string; onPress: () => void }): OrcaNode {
+  if (look.icon === 'spinner') return <Spinner label={label} labelHidden />
+  return <IconButton icon={look.icon} label={label} tooltip={label} variant="ghost" tone={look.iconTone} size="xs" onPress={onPress} />
+}
+
+function StatusBadge({ look, label }: { look: StatusLook; label: string }): OrcaNode {
+  if (!look.badge) return <Text size="xs" muted>{label}</Text>
+  const badge = <Badge tone={look.badge}>{label}</Badge>
+  if (look.icon !== 'spinner') return badge
+  return (
+    <Row gap="xs" align="center">
+      <Spinner label={label} labelHidden />
+      {badge}
+    </Row>
+  )
+}
+
 function AgentCard({ snap, fam, a, w }: { snap: BoardSnapshot; fam: Family; a: BoardAgent; w: VisibleWorkspace }): OrcaNode {
-  const { status, label } = cardStatus(a, w)
-  const look = STATUS_LOOK[status]
-  const childAlert = childNeedsMe(fam, a, w)
+  const own = cardStatus(a, w)
+  const look = STATUS_LOOK[cardEmphasis(fam, a, w)]
+  // The badge keeps the card's own status; a waiting child shows in the children summary.
+  const badgeLook = STATUS_LOOK[own.status]
   const title = a.title || a.prompt || '(untitled)'
   const where = wsLabel(snap, w)
-  const strong = status === 'waiting' || status === 'unread' || status === 'failed'
+  const press = () => open(w.id, a.id, where)
   const message = a.last ? { who: 'Agent:', text: a.last } : a.prompt ? { who: 'You:', text: a.prompt } : null
-  const highlight: Tone | undefined = status === 'waiting' || childAlert ? 'warning' : status === 'failed' ? 'danger' : undefined
   return (
-    <Box key={a.id} border={highlight ?? false} background={highlight ?? 'none'} radius="md">
-      <List label={title}>
-        <ListItem icon={look.icon} onPress={() => open(w.id, a.id, where)}>
-          <Stack gap="xs">
-            <Row gap="xs" wrap>
-              <Badge>{where}</Badge>
-              <Badge>{w.host}</Badge>
-            </Row>
-            <Row gap="xs" align="center">
-              {status === 'working' ? <Spinner label="Running" labelHidden /> : null}
-              <Text weight={strong ? 'semibold' : 'medium'} muted={status === 'done'} truncate>
+    <Box key={a.id} direction="row" align="stretch" gap="xs" border={look.border} background={look.background} radius="md">
+      {look.bar ? <Box width={BAR_WIDTH} shrink={false} border={look.bar} background={look.bar} radius="full" /> : null}
+      {/* Outside the ListItem: a pressable ListItem cannot hold an IconButton. */}
+      <Box shrink={false} paddingY="sm" align="center">
+        <StatusIcon look={look} label={own.label} onPress={press} />
+      </Box>
+      <Box grow>
+        <List label={title}>
+          <ListItem onPress={press}>
+            <Stack gap="xs">
+              <Text weight={look.strong ? 'semibold' : 'regular'} truncate>
                 {title}
               </Text>
-            </Row>
-            {message ? (
-              <Text size="sm" muted>
-                <Text size="sm" weight="medium">{message.who}</Text> {message.text.length > 180 ? `${message.text.slice(0, 179)}…` : message.text}
-              </Text>
-            ) : null}
-            <Row gap="xs" wrap align="center">
-              <Badge tone={look.tone}>{label}</Badge>
-              {isLatest(a, w) ? <ChildBadges fam={fam} w={w} /> : null}
-              <Text size="xs" muted>
-                {a.agent ?? 'agent'} · <RelativeTime at={a.updatedAt} format="short" muted />
-                {a.subagents ? ` · ${plural(a.subagents, 'subagent', 'subagents')}` : ''}
-                {a.kind === 'terminal' ? ' · terminal' : ''}
-              </Text>
-            </Row>
-          </Stack>
-        </ListItem>
-      </List>
+              <Row gap="xs" wrap>
+                <Badge>{where}</Badge>
+                <Badge>{w.host}</Badge>
+              </Row>
+              {message ? (
+                <Text size="sm" muted>
+                  <Text size="sm" weight={look.strong ? 'medium' : 'regular'} muted={!look.strong}>{message.who}</Text> {message.text.length > 180 ? `${message.text.slice(0, 179)}…` : message.text}
+                </Text>
+              ) : null}
+              <Row gap="xs" wrap align="center">
+                <StatusBadge look={badgeLook} label={own.label} />
+                {isLatest(a, w) ? <ChildBadges fam={fam} w={w} /> : null}
+                <Text size="xs" muted>
+                  {a.agent ?? 'agent'} · <RelativeTime at={a.updatedAt} format="short" muted />
+                  {a.subagents ? ` · ${plural(a.subagents, 'subagent', 'subagents')}` : ''}
+                  {a.kind === 'terminal' ? ' · terminal' : ''}
+                </Text>
+              </Row>
+            </Stack>
+          </ListItem>
+        </List>
+      </Box>
     </Box>
   )
 }

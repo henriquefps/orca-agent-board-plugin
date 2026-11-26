@@ -68,14 +68,18 @@ collapsed groups) is kept by Orca for the plugin and needs no `storage:own`.
 - **Filters**, matched per agent, not per workspace: **Needs me** (waiting, blocked or unread, or the most
   recent chat of a workspace whose child waits), **Running**, **Unread**, **Hide children** (List only, on
   by default) and **Hide idle** (workspaces without an open agent; on by default). Chip counts count agents.
-- **Agent cards:** project/workspace and host on top; the status icon and title; "Agent: <last reply>";
-  then the status, the children summary (on the workspace's most recent chat only: how many descendant
-  workspaces, and how many of them are running, need you, failed or unread), agent kind, relative time and
-  subagents.
-- **One status per card**, most urgent first: needs you (warning icon and badge; the card is tinted and
-  outlined) > failed or interrupted (danger, outlined) > running (accent, with an animated spinner) >
-  unread (amber bell, bold title, no tint) > done (quiet). A card whose child needs you is tinted and
-  outlined too.
+- **Agent cards:** a status icon beside the card (an animated spinner while running); the title;
+  project/workspace and host; "Agent: <last reply>"; then the status, the children summary (on the
+  workspace's most recent chat only: how many descendant workspaces, and how many of them need you,
+  failed, are running or unread, each in its tone), agent kind, relative time and subagents.
+- **One status per card**, most urgent first, with the prototype's signals (left bar, card surface, icon,
+  title weight, badge), all in Orca's theme tones:
+  - needs you: warning bar, tinted and outlined card, warning icon, semibold title, warning badge. The
+    most recent chat of a workspace whose child needs you looks the same.
+  - failed or interrupted: danger bar and outline, error icon, semibold, danger badge.
+  - running: accent bar, spinner, semibold, accent badge with a spinner.
+  - unread: amber (warning) bar like Orca's bell, bell icon, semibold, warning badge.
+  - done: no bar, a neutral check, regular title, muted reply, the word "done" as quiet text.
 - **Projects:** one collapsible group per Git remote across hosts. A display name you set in Orca (one
   that differs from the folder name) wins on any host, else this computer's. Children nest under their
   parent; a child whose parent is in another project says "child of …".
@@ -83,8 +87,8 @@ collapsed groups) is kept by Orca for the plugin and needs no `storage:own`.
 - **Click** an agent or workspace to show it in Orca: `workspace.open` for workspaces on this computer
   (`terminal.focus` first for a terminal agent), `orca worktree activate` (then `terminal switch`) for
   other Orca servers, and the floating workspace for its chats.
-- **Status bar:** "N need you" (agents matching Needs me on every host), hidden at zero. Pressing it shows
-  the panel.
+- **Status bar:** "N need you", hidden at zero: the List's **Needs me** chip with the default filters, on
+  every host (children count once, through their parent's summary). Pressing it shows the panel.
 - View, filters, host filter and collapsed groups are remembered.
 
 ## Settings

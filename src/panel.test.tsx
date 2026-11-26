@@ -1,7 +1,7 @@
 // The panel with Orca's real runtime and checks, against invented fixtures.
-import { afterEach, assert, mockHost, mount, test, type TestPanel } from 'orca/testing'
+import { afterEach, assert, mockHost, mount, test, type TestPanel, type TreeSnapshot } from 'orca/testing'
 import { hostOnlySnapshotFixture, snapshotFixture } from './fixtures.ts'
-import { NOTICE_NO_CLI } from './model.ts'
+import { DEFAULT_FILTERS, needsMeCount, NOTICE_NO_CLI } from './model.ts'
 import * as panelModule from './panel.tsx'
 
 let panel: TestPanel | undefined
@@ -114,4 +114,106 @@ test('without the CLI the panel says which features are off', async () => {
   const { panel: p } = await open('list', allOff, hostOnlySnapshotFixture())
   assert.ok(p.find({ type: 'Callout', text: NOTICE_NO_CLI }))
   assert.ok(cardTitles(p).includes('Rotate the signing keys'))
+})
+
+// -- Status emphasis ------------------------------------------------------------------------------
+
+type Node = TreeSnapshot
+const kids = (n: Node): Node[] => (n.children ?? []).filter((c): c is Node => typeof c !== 'string')
+const walk = (n: Node, out: Node[] = []): Node[] => {
+  out.push(n)
+  for (const c of kids(n)) walk(c, out)
+  return out
+}
+const textOf = (n: Node | string): string => (typeof n === 'string' ? n : (n.children ?? []).map(textOf).join(''))
+
+/** What a card draws: its bar, surface, status icon, title weight and status badge. */
+function cardLook(p: TestPanel, title: string) {
+  const root = p.tree()
+  assert.ok(root && typeof root !== 'string')
+  const card = walk(root).find(
+    (n) => n.type === 'Box' && n.props?.direction === 'row' && kids(n).some((c) => walk(c).some((d) => d.type === 'List' && d.props?.label === title))
+  )
+  assert.ok(card, `card ${title}`)
+  const [first, second] = kids(card)
+  const bar = first?.props?.width === 3 ? first : null
+  const iconSlot = bar ? second : first
+  const icon = iconSlot ? kids(iconSlot)[0] : undefined
+  const nodes = walk(card)
+  const titleText = nodes.find((n) => n.type === 'Text' && textOf(n) === title)
+  const badges = nodes.filter((n) => n.type === 'Badge').map((n) => ({ text: textOf(n), tone: n.props?.tone ?? null }))
+  return {
+    bar: bar ? { tone: bar.props?.background, border: bar.props?.border } : null,
+    background: card.props?.background ?? 'none',
+    border: card.props?.border ?? false,
+    icon: icon?.type === 'Spinner' ? 'spinner' : { name: icon?.props?.icon, tone: icon?.props?.tone },
+    weight: titleText?.props?.weight,
+    badges,
+    spinners: nodes.filter((n) => n.type === 'Spinner').length
+  }
+}
+
+test('each status draws the prototype’s signals: bar, surface, toned icon, weight, badge', async () => {
+  const { panel: p } = await open('list', { ...allOff, hideChildren: false })
+  // needs you: warning bar, tinted and outlined card, warning icon, semibold, warning badge.
+  const waiting = cardLook(p, 'Rotate the signing keys')
+  assert.deepEqual(waiting.bar, { tone: 'warning', border: 'warning' })
+  assert.equal(waiting.background, 'warning')
+  assert.equal(waiting.border, 'warning')
+  assert.deepEqual(waiting.icon, { name: 'warning', tone: 'warning' })
+  assert.equal(waiting.weight, 'semibold')
+  assert.deepEqual(waiting.badges.at(-1), { text: 'needs you', tone: 'warning' })
+  // failed: danger bar and outline, no tint, error icon.
+  const failed = cardLook(p, 'Fix the flaky webhook test')
+  assert.deepEqual(failed.bar, { tone: 'danger', border: 'danger' })
+  assert.equal(failed.background, 'none')
+  assert.equal(failed.border, 'danger')
+  assert.deepEqual(failed.icon, { name: 'error', tone: 'danger' })
+  assert.equal(failed.weight, 'semibold')
+  assert.deepEqual(failed.badges.at(-1), { text: 'failed', tone: 'danger' })
+  // running: accent bar, Spinner before the title and beside the accent badge.
+  const running = cardLook(p, 'Cart totals with discounts')
+  assert.deepEqual(running.bar, { tone: 'accent', border: 'accent' })
+  assert.equal(running.border, false)
+  assert.equal(running.icon, 'spinner')
+  assert.equal(running.spinners, 2)
+  assert.equal(running.weight, 'semibold')
+  assert.deepEqual(running.badges.at(-1), { text: 'running', tone: 'accent' })
+  // unread: amber bar like Orca's bell, bell icon, warning badge.
+  const unread = cardLook(p, 'Receipt email template')
+  assert.deepEqual(unread.bar, { tone: 'warning', border: 'warning' })
+  assert.equal(unread.background, 'none')
+  assert.deepEqual(unread.icon, { name: 'bell', tone: 'warning' })
+  assert.equal(unread.weight, 'semibold')
+  assert.deepEqual(unread.badges.at(-1), { text: 'unread', tone: 'warning' })
+  // done: recedes. No bar, no outline, neutral check, regular title, no badge (quiet text).
+  const done = cardLook(p, 'Bump dependencies')
+  assert.equal(done.bar, null)
+  assert.equal(done.border, false)
+  assert.deepEqual(done.icon, { name: 'check', tone: 'neutral' })
+  assert.equal(done.weight, 'regular')
+  assert.equal(done.badges.some((b) => b.text === 'done'), false)
+  // A parent whose child needs you looks like "needs you"; its summary parts carry their tones.
+  const parent = cardLook(p, 'Checkout redesign')
+  assert.deepEqual(parent.bar, { tone: 'warning', border: 'warning' })
+  assert.equal(parent.background, 'warning')
+  assert.equal(parent.border, 'warning')
+  assert.equal(parent.weight, 'semibold')
+  assert.ok(parent.badges.some((b) => b.text === '1 child needs you' && b.tone === 'warning'))
+  assert.ok(parent.badges.some((b) => b.text === '1 running' && b.tone === 'accent'))
+  assert.ok(parent.badges.some((b) => b.text === '1 unread' && b.tone === 'warning'))
+  assert.deepEqual(p.errors, [])
+  assert.deepEqual(p.warnings, [])
+  assert.deepEqual(p.refusals, [])
+})
+
+test('the status bar count is the "Needs me" chip with the default filters', async () => {
+  const snapshot = snapshotFixture()
+  // The fixture has children that need the person (one blocked, one unread) under a parent.
+  assert.ok(snapshot.workspaces.some((w) => w.parentId && w.agents.some((a) => a.state === 'blocked')))
+  const { panel: p } = await open('list', DEFAULT_FILTERS, snapshot)
+  const chip = p.find({ type: 'Button', text: /^Needs me \d+$/ })
+  assert.ok(chip)
+  assert.equal(chip.text, `Needs me ${needsMeCount(snapshot)}`)
+  assert.equal(needsMeCount(snapshot), 2, 'children count once, through their parent')
 })

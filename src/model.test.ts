@@ -3,6 +3,7 @@
 import { assert, test } from 'orca/testing'
 import { snapshotFixture } from './fixtures.ts'
 import {
+  cardEmphasis,
   cardStatus,
   childSummary,
   DEFAULT_FILTERS,
@@ -110,7 +111,7 @@ test('filters match single agents, not workspaces', () => {
   assert.deepEqual(unread, ['Receipt email template'])
   // Chip counts count agents in scope.
   assert.deepEqual(filterCounts(s, f, q()), { needsMe: 2, running: 1, unread: 0 })
-  assert.equal(needsMeCount(s), 4)
+  assert.equal(needsMeCount(s), 2, 'the status bar counts like the chip')
 })
 
 test('Hide idle drops workspaces without agents; search covers titles, projects and messages', () => {
@@ -140,4 +141,28 @@ test('Tree nests children under parents across hosts; Projects says when a paren
   const groups = projectGroups(s2, f2, visibleWorkspaces(s2, f2, q({ view: 'projects' })))
   const pay = groups.find((g) => g.key === 'github.com/acme/payments-api')
   assert.equal(pay?.nodes.find((n) => n.ws.name === 'flaky-tests')?.foreignParent, 'Storefront/main')
+})
+
+test('emphasis: a parent’s latest chat whose child needs you looks like "needs you"', () => {
+  const s = snap()
+  const f = family(s.workspaces)
+  const main = ws(s, 'main')
+  const [latest, older] = main.agents
+  assert.ok(latest && older)
+  assert.equal(cardStatus(latest, main).status, 'done', 'its own status stays on the badge')
+  assert.equal(cardEmphasis(f, latest, main), 'waiting')
+  assert.equal(cardEmphasis(f, older, main), cardStatus(older, main).status, 'never an older chat')
+  const keys = ws(s, 'key-rotation')
+  assert.equal(cardEmphasis(f, keys.agents[0]!, keys), 'waiting')
+})
+
+test('status bar count: children that need you count once, through their parent, like the chip', () => {
+  const s = snap()
+  const f = family(s.workspaces)
+  const chip = filterCounts(s, f, q()).needsMe
+  assert.equal(needsMeCount(s), chip)
+  // Counting every agent on every host (the old rule) gave more: the children and their parent.
+  let everyAgent = 0
+  for (const w of s.workspaces) for (const a of w.agents) if (a.state === 'waiting' || a.state === 'blocked' || a.unread || (w.unread && w.agents[0] === a)) everyAgent++
+  assert.ok(everyAgent > chip)
 })
