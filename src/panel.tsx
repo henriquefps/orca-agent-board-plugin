@@ -92,7 +92,7 @@ export const STATUS_LOOK: Record<CardStatus, { icon: IconName; tone: Tone }> = {
   waiting: { icon: 'warning', tone: 'warning' },
   failed: { icon: 'error', tone: 'danger' },
   working: { icon: 'activity', tone: 'accent' },
-  unread: { icon: 'bell', tone: 'success' },
+  unread: { icon: 'bell', tone: 'warning' },
   done: { icon: 'check', tone: 'neutral' }
 }
 
@@ -170,7 +170,7 @@ function ChildBadges({ fam, w }: { fam: Family; w: VisibleWorkspace }): OrcaNode
     s.waiting ? <Badge key="w" tone="warning">{s.waiting === 1 ? '1 child needs you' : `${s.waiting} children need you`}</Badge> : null,
     s.failed ? <Badge key="f" tone="danger">{`${s.failed} failed`}</Badge> : null,
     s.working ? <Badge key="r" tone="accent">{`${s.working} running`}</Badge> : null,
-    s.unread ? <Badge key="u" tone="success">{`${s.unread} unread`}</Badge> : null
+    s.unread ? <Badge key="u" tone="warning">{`${s.unread} unread`}</Badge> : null
   ]
 }
 
@@ -233,7 +233,7 @@ function WorkspaceBlock({ snap, fam, node, showProject, budget }: { snap: BoardS
             <Row gap="xs" align="center" wrap>
               <Text weight="medium" truncate>{name}</Text>
               <Badge>{w.host}</Badge>
-              {w.unread ? <Badge tone="success">unread</Badge> : null}
+              {w.unread ? <Badge tone="warning">unread</Badge> : null}
               {w.kanban && w.kanban !== 'in-progress' ? <Badge>{w.kanban}</Badge> : null}
               {w.pinned ? <Badge>pinned</Badge> : null}
               <Text size="xs" muted><RelativeTime at={w.lastAt} format="short" muted /></Text>

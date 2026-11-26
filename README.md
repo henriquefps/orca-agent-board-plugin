@@ -15,13 +15,8 @@ work back. The built-in sidebar shows workspaces; Agent Board shows **agents**:
 - **Three views:** List (agents by last activity), Projects (grouped by repository, children nested under
   their parent) and Tree (the full parent/child chain across hosts and projects).
 
-| List | Projects |
-| --- | --- |
-| ![List view](docs/screenshots/list.png) | ![Projects view](docs/screenshots/projects.png) |
-| **Tree** | **Needs me** |
-| ![Tree view](docs/screenshots/tree.png) | ![Needs me filter, with a parent whose child is blocked](docs/screenshots/needs-you.png) |
-
-The screenshots use invented hosts and projects (`src/fixtures.ts`).
+Screenshots (List, Projects, Tree, Needs me) will be added under `docs/screenshots/`, rendered from the
+invented fixtures in `src/fixtures.ts`.
 
 ## Install
 
@@ -77,9 +72,10 @@ collapsed groups) is kept by Orca for the plugin and needs no `storage:own`.
   then the status, the children summary (on the workspace's most recent chat only: how many descendant
   workspaces, and how many of them are running, need you, failed or unread), agent kind, relative time and
   subagents.
-- **One status per card**, most urgent first: needs you (warning) > failed or interrupted (danger) >
-  running (accent, with a spinner) > unread (success, bell) > done (quiet). A card that needs you, or whose
-  child needs you, is tinted and outlined.
+- **One status per card**, most urgent first: needs you (warning icon and badge; the card is tinted and
+  outlined) > failed or interrupted (danger, outlined) > running (accent, with an animated spinner) >
+  unread (amber bell, bold title, no tint) > done (quiet). A card whose child needs you is tinted and
+  outlined too.
 - **Projects:** one collapsible group per Git remote across hosts. A display name you set in Orca (one
   that differs from the folder name) wins on any host, else this computer's. Children nest under their
   parent; a child whose parent is in another project says "child of …".
