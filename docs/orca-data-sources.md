@@ -69,6 +69,12 @@ cannot: see the CLI notes below.
 - Orca starts the worker with `child_process.fork` and no Node permission flags, so the worker can spawn
   processes (`node:child_process`), but with a short environment allowlist (`PATH`, `HOME`,
   `USERPROFILE`, `LANG`, `TMPDIR`, `XDG_RUNTIME_DIR`, …). `ORCA_CLI_COMMAND` is not passed.
+- On Windows the allowlist has **no `APPDATA`, `LOCALAPPDATA` or `SystemRoot`**, and the Orca CLI
+  fails without `APPDATA` (`runtime_unavailable`: "APPDATA is not set, so the Orca runtime metadata path
+  cannot be resolved"). The board fills them in for the processes it spawns (the CLI, the clipboard tool),
+  only when missing and only on Windows: `APPDATA` = `<home>\AppData\Roaming`, `LOCALAPPDATA` =
+  `<home>\AppData\Local`, where `<home>` is `USERPROFILE`, else `HOMEDRIVE`+`HOMEPATH`, else the OS home;
+  `SystemRoot` = `windir`, else `C:\Windows`.
 - The worker runs inside Orca's own executable (`process.execPath`), so the CLI launcher Orca ships is at
   `<resources>/bin/orca` (macOS, `Contents/Resources`), `<resources>/bin/orca-ide` (Linux) or
   `<resources>\bin\orca.exe` (Windows), next to it.

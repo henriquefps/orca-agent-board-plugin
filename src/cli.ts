@@ -4,6 +4,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { withWindowsVars, windowsHome } from './winenv.ts'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
 
 export type CliAnswer<T = unknown> = { result: T; error?: undefined } | { result?: undefined; error: string }
@@ -63,7 +64,7 @@ export function resolveCli(
   }
   if (platform === 'linux') return onPath('orca-ide', env)
   if (platform === 'win32') {
-    const local = env.LOCALAPPDATA || join(home, 'AppData', 'Local')
+    const local = env.LOCALAPPDATA || join(windowsHome(env), 'AppData', 'Local')
     const p = join(local, 'Programs', 'Orca', 'resources', 'bin', 'orca.exe')
     if (isFile(p)) return p
     return onPath('orca.exe', env)
@@ -72,11 +73,12 @@ export function resolveCli(
 }
 
 /** A child environment for the CLI: without the Node-mode flags Orca's worker runs under. */
-function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out = { ...env }
-  delete out.ELECTRON_RUN_AS_NODE
-  delete out.NODE_OPTIONS
-  return out
+export function childEnv(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
+  const out = withWindowsVars(env, platform)
+  const clean = { ...out }
+  delete clean.ELECTRON_RUN_AS_NODE
+  delete clean.NODE_OPTIONS
+  return clean
 }
 
 /** At most `limit` CLI processes at once: each is a short-lived Orca process. */
@@ -95,9 +97,9 @@ function limiter(limit: number) {
   }
 }
 
-export function cliRunner(command: string, env: NodeJS.ProcessEnv = process.env): CliRunner {
+export function cliRunner(command: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): CliRunner {
   const run = limiter(4)
-  const cenv = childEnv(env)
+  const cenv = childEnv(env, platform)
   return (args, options) =>
     run(
       () =>
@@ -129,7 +131,7 @@ export function orcaUserDataDir(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform
 ): string {
-  const home = env.HOME || env.USERPROFILE || homedir()
+  const home = platform === 'win32' ? windowsHome(env) : env.HOME || env.USERPROFILE || homedir()
   if (platform === 'darwin') return join(home, 'Library', 'Application Support', 'orca')
   if (platform === 'win32') return join(env.APPDATA || join(home, 'AppData', 'Roaming'), 'orca')
   return join(env.XDG_CONFIG_HOME || join(home, '.config'), 'orca')
