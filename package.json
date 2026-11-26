@@ -1,0 +1,15 @@
+{
+  "name": "orca-agent-board-plugin",
+  "private": true,
+  "description": "Agent Board for Orca. Orca loads the sources as written; this file only pins the dev tools for type checking.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "prototype": "node prototype/server.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3"
+  }
+}
