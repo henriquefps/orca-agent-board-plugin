@@ -16,12 +16,22 @@ work back. The built-in sidebar shows workspaces; Agent Board shows **agents**:
   machine, parent, last reply, status label, children, agent kind, time, subagents, terminal tag).
 - **Card actions.** The ⋯ button on each card copies the agent's Orca session id
   (`orca_session_id:…`, ready to message it), marks its workspace read, or copies the workspace's folder.
-- **Everything opens here.** Agents on other machines open in this computer's Orca window.
+- **Click to open.** An agent on this computer opens in Orca's window (agents on other machines: see
+  [Known limits](#known-limits)).
 - **Three views:** List (agents by last activity), Projects (grouped by repository, children nested under
   their parent) and Tree (the full parent/child chain across hosts and projects).
 
-Screenshots (List, Projects, Tree, Needs me) will be added under `docs/screenshots/`, rendered from the
-invented fixtures in `src/fixtures.ts`.
+| List | Projects | Tree | Every status |
+| --- | --- | --- | --- |
+| ![List view: agents by last activity, children hidden](docs/screenshots/list.png) | ![Projects view: one group per Git repository](docs/screenshots/projects.png) | ![Tree view: the parent and child chain](docs/screenshots/tree.png) | ![Cards in each status: running, needs you, blocked, a parent whose child needs you](docs/screenshots/statuses.png) |
+
+Rendered by `orca plugin shot` from the invented fixtures in `src/fixtures.ts`.
+
+> **This plugin runs its own code.** It is a `trusted-worker` plugin: a small Node.js process on your
+> computer that reads your agents through the Orca CLI, the only source of parent and child workspaces,
+> other machines and last replies. It sends nothing over the network and collects no data. Orca asks you
+> to approve it before it loads; [What Orca asks you to approve](#what-orca-asks-you-to-approve) lists
+> everything it is granted and why.
 
 ## Install
 
